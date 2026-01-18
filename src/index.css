@@ -1,0 +1,11 @@
+/* src/index.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Thêm một chút base style cho đẹp */
+@layer base {
+  body {
+    @apply antialiased;
+  }
+}
