@@ -38,3 +38,6 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Spec file
+python-sidecar/bridge-ai-backend.spec
