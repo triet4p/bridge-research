@@ -42,4 +42,4 @@ wheels/
 # Spec file
 python-sidecar/bridge-ai-backend.spec
 
-src_tauri/icons/
+src-tauri/icons/

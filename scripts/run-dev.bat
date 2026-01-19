@@ -1,4 +1,5 @@
 @echo off
+@chcp 65001 >nul
 SETLOCAL
 
 REM Lấy thư mục gốc của dự án (thư mục cha của folder scripts)
@@ -34,4 +35,5 @@ IF "%1"=="--rebuild-sidecar" (
 
 ECHO [DEV-SCRIPT] 🚀 Starting Tauri Dev Environment...
 ECHO -----------------------------------------------------------------------
+call npx tauri icon assets/app-icon-square.png
 call npm run tauri dev

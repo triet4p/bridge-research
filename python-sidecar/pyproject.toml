@@ -1,6 +1,6 @@
 [project]
 name = "bridge-ai-brain"
-version = "0.1.0"
+version = "0.1.1"
 description = "AI Sidecar for Bridge Research App"
 requires-python = ">=3.12"
 dependencies = [

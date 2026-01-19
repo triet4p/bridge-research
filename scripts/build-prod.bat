@@ -1,4 +1,5 @@
 @echo off
+@chcp 65001 >nul
 SETLOCAL
 
 REM --- CẤU HÌNH ---
@@ -26,6 +27,7 @@ ECHO [SUCCESS] Sidecar built and moved to src-tauri/binaries/
 REM 2. BUILD TAURI APP
 ECHO.
 ECHO [2/2] 🦀 Building Tauri App and Installer...
+call npx tauri icon assets/app-icon-square.png
 call npm run tauri build
 IF %ERRORLEVEL% NEQ 0 (
     ECHO [ERROR] Tauri build failed!
