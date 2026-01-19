@@ -3,9 +3,11 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Thêm một chút base style cho đẹp */
 @layer base {
-  body {
-    @apply antialiased;
+  html, body {
+    /* Ngăn chặn hành vi kéo nảy (elastic scrolling) của Webview */
+    overscroll-behavior: none;
+    /* Set màu nền trùng với theme để che khuyết điểm */
+    @apply bg-gray-50 dark:bg-slate-950 antialiased;
   }
 }

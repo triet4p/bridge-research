@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { SearchFilters } from '../types/api';
 import { DEFAULT_PAGE_SIZE, DEFAULT_DATE_RANGE } from '../constants/defaults';
 import { TRANSLATIONS } from '../constants/translations';
+import type { ViewMode } from '../constants/ui';
 
 interface AppState {
     searchQuery: string;
@@ -11,11 +12,14 @@ interface AppState {
     language: 'en' | 'vi';
 
     t: typeof TRANSLATIONS['en'];
+
+    currentView: ViewMode;
     
     setSearchQuery: (query: string) => void;
     setFilters: (filters: Partial<SearchFilters>) => void;
     toggleTheme: () => void;
     setLanguage: (lang: 'en' | 'vi') => void;
+    setView: (view: ViewMode) => void; 
 }
 
 const DEFAULT_FILTERS: SearchFilters = {
@@ -32,7 +36,9 @@ export const useAppStore = create<AppState>((set) => ({
     
     filters: DEFAULT_FILTERS,
     
-    isDarkMode: true, // Default dark mode cho ngầu
+    isDarkMode: true, 
+
+    currentView: 'search',
 
     setSearchQuery: (query) => set({ searchQuery: query }),
     
@@ -48,4 +54,6 @@ export const useAppStore = create<AppState>((set) => ({
         language: lang,
         t: TRANSLATIONS[lang] 
     }),
+
+    setView: (view) => set({ currentView: view })
 }));

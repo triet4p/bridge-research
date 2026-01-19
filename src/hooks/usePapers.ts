@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../lib/axios';
 import { Paper, SearchFilters } from '../types/api';
 import { useAppStore } from '../stores/useAppStore';
@@ -21,10 +21,15 @@ const fetchPapers = async (query: string, filters: SearchFilters): Promise<Paper
     return data;
 };
 
+const fetchLibrary = async (): Promise<Paper[]> => {
+    const { data } = await apiClient.get<Paper[]>('/papers/library');
+    return data;
+}
+
 // Custom Hook dùng trong Component
 export const useSearchPapers = () => {
     // Lấy state từ Store
-    const { searchQuery, filters } = useAppStore();
+    const { searchQuery, filters, currentView } = useAppStore();
 
     return useQuery({
         // Key định danh cho request này (phụ thuộc vào query và filters)
@@ -34,9 +39,44 @@ export const useSearchPapers = () => {
         queryFn: () => fetchPapers(searchQuery, filters),
         
         // Chỉ chạy khi có query
-        enabled: true,
+        enabled: currentView === 'search',
         
         // Giữ data cũ trong khi đang fetch mới (UX mượt hơn)
         placeholderData: (previousData) => previousData,
+    });
+};
+
+export const useLibrary = () => {
+    return useQuery({
+        queryKey: ['papers', 'library'],
+        queryFn: fetchLibrary,
+    });
+};
+
+export const useSavePaper = () => {
+    const queryClient = useQueryClient();
+    
+    return useMutation({
+        mutationFn: async (paper: Paper) => {
+            const { data } = await apiClient.post<Paper>('/papers/save', paper);
+            return data;
+        },
+        onSuccess: () => {
+            // Refresh lại cả Search và Library để cập nhật trạng thái is_downloaded
+            queryClient.invalidateQueries({ queryKey: ['papers'] });
+        }
+    });
+};
+
+export const useDeletePaper = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (paperId: string) => {
+            await apiClient.delete(`/papers/${paperId}`);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['papers'] });
+        }
     });
 };

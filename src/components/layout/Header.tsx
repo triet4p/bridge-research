@@ -1,6 +1,6 @@
 // src/components/layout/Header.tsx
 import React, { useState } from 'react';
-import { Search, RefreshCw, Moon, Sun, Languages, Calendar as CalendarIcon, Filter, Check, Hash } from 'lucide-react';
+import { Search, RefreshCw, Moon, Sun, Languages, Calendar as CalendarIcon, Filter, Check, Hash, BookOpen, Search as SearchIcon } from 'lucide-react';
 import { useAppStore } from '../../stores/useAppStore';
 import { ARXIV_CATEGORIES } from '../../constants/defaults';
 
@@ -10,7 +10,7 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ onRefresh, isRefreshing }) => {
-    const { searchQuery, setSearchQuery, isDarkMode, toggleTheme, filters, setFilters, language, setLanguage, t } = useAppStore();
+    const { currentView, setView, searchQuery, setSearchQuery, isDarkMode, toggleTheme, filters, setFilters, language, setLanguage, t } = useAppStore();
     const [localQuery, setLocalQuery] = useState(searchQuery);
     const [showDateFilter, setShowDateFilter] = useState(false);
     const [showCatFilter, setShowCatFilter] = useState(false); // State cho dropdown category
@@ -40,7 +40,23 @@ export const Header: React.FC<HeaderProps> = ({ onRefresh, isRefreshing }) => {
     return (
         <header className="sticky top-0 z-40 w-full backdrop-blur-lg bg-white/80 dark:bg-slate-950/80 border-b border-gray-200 dark:border-slate-800">
             <div className="max-w-5xl mx-auto px-4 py-4">
-                
+                <div className="flex justify-center mb-4">
+                    <div className="bg-gray-100 dark:bg-slate-900 p-1 rounded-xl flex gap-1">
+                        <button 
+                            onClick={() => setView('search')}
+                            className={`px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${currentView === 'search' ? 'bg-white dark:bg-slate-800 text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+                        >
+                            <SearchIcon size={14} /> Search
+                        </button>
+                        <button 
+                            onClick={() => setView('library')}
+                            className={`px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${currentView === 'library' ? 'bg-white dark:bg-slate-800 text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+                        >
+                            <BookOpen size={14} /> Library
+                        </button>
+                    </div>
+                </div>
+
                 {/* Search Row */}
                 <div className="flex flex-col md:flex-row gap-4 justify-between items-center mb-4">
                     <div className="flex items-center gap-2 select-none">
