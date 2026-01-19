@@ -3,6 +3,8 @@
 > **From Paper to Practice.**  
 > A Research Assistant that bridges the gap between Academic Research and Engineering Implementation.
 
+![Banner](./assets/repo-banner.png)
+
 ## 📖 Introduction
 
 In the rapidly evolving landscape of AI and Data Science, staying updated with ArXiv papers is crucial. However, simply reading abstract is not enough. Engineers and CTOs need to know:
