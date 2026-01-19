@@ -9,7 +9,7 @@ router = APIRouter()
 def search_papers(
     query: str | None = Query(None, description="Keyword search (Title, Abstract)"),
     categories: List[str] = Query(default=[], description="List of ArXiv categories"),
-    limit: int = 20,
+    limit: int = Query(default=20, ge=1, le=100, description="Max results (1-100)"),
     start_date: str | None = None,
     end_date: str | None = None
 ):

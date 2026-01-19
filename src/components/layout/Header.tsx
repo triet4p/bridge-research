@@ -1,6 +1,6 @@
 // src/components/layout/Header.tsx
 import React, { useState } from 'react';
-import { Search, RefreshCw, Moon, Sun, Languages, Calendar as CalendarIcon, Filter, Check } from 'lucide-react';
+import { Search, RefreshCw, Moon, Sun, Languages, Calendar as CalendarIcon, Filter, Check, Hash } from 'lucide-react';
 import { useAppStore } from '../../stores/useAppStore';
 import { ARXIV_CATEGORIES } from '../../constants/defaults';
 
@@ -24,6 +24,17 @@ export const Header: React.FC<HeaderProps> = ({ onRefresh, isRefreshing }) => {
             ? current.filter(c => c !== id)
             : [...current, id];
         setFilters({ categories: newCats });
+    };
+
+    const handleLimitChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        let val = parseInt(e.target.value);
+        if (isNaN(val)) val = 10; // Default nếu xóa hết
+        
+        // Validation logic tại Frontend
+        if (val < 1) val = 1;
+        if (val > 100) val = 100;
+        
+        setFilters({ limit: val });
     };
 
     return (
@@ -122,6 +133,20 @@ export const Header: React.FC<HeaderProps> = ({ onRefresh, isRefreshing }) => {
                                 </div>
                             </div>
                         )}
+                        </div>
+
+                        {/* 3. Max Results */}
+                        <div className='flex items-center bg-gray-50 dark:bg-slate-900 border border-transparent hover:border-gray-200 dark:hover:border-slate-700 rounded-xl px-3 py-2 transition-all'>
+                            <Hash size={14} className="text-gray-400 mr-2" />
+                            <input 
+                                type="number" 
+                                min="1" 
+                                max="100"
+                                value={filters.limit}
+                                onChange={handleLimitChange}
+                                className="w-10 bg-transparent text-xs font-bold text-gray-600 dark:text-gray-300 outline-none text-center"
+                                title="Max Results (1-100)"
+                            />
                         </div>
                     </div>
 
