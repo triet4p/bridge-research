@@ -15,6 +15,7 @@ from src.core.config import settings
 from src.core.database import init_db
 from src.core.logger import get_logger
 from src.api.v1.api import api_router
+from src.initialization import init_lm_setting
 
 _logger = get_logger('PythonSidecar')
 multiprocessing.freeze_support()
@@ -34,6 +35,7 @@ def watchdog_process():
 
 # --- APP SETUP ---
 init_db()
+init_lm_setting()
 app = FastAPI(title=settings.PROJECT_NAME)
 
 app.add_middleware(

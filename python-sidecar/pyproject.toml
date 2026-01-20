@@ -4,10 +4,13 @@ version = "0.1.1"
 description = "AI Sidecar for Bridge Research App"
 requires-python = ">=3.12"
 dependencies = [
+    "dspy-ai>=3.1.2",
     "fastapi>=0.109.0",
+    "keyring>=25.7.0",
     "pydantic-settings>=2.12.0",
     "requests>=2.32.5",
     "sqlmodel>=0.0.31",
+    "tokenizers>=0.22.2",
     "uvicorn>=0.27.0",
 ]
 

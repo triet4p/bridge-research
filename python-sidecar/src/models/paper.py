@@ -8,6 +8,7 @@ class PaperReadStatus(str, Enum):
     DONE = 'done'
 
 class Paper(SQLModel, table=True):
+    __tablename__ = 'papers'
     paper_id: str = Field(primary_key=True)
     title: str
     summary: str

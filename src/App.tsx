@@ -7,9 +7,10 @@ import { PaperCard } from './components/paper/PaperCard';
 import { Loader2, AlertTriangle, FileText, BookOpen } from 'lucide-react';
 import { apiClient } from './lib/axios';
 import { useLibraryFilter } from './hooks/useLibraryFilter';
+import { LMSettingsModal } from './components/settings/LMSettingsModal';
 
 function App() {
-  const { isDarkMode, searchQuery, currentView, t } = useAppStore();
+  const { isDarkMode, searchQuery, currentView, t, isBackendReady, setBackendReady } = useAppStore();
   
   // 1. Gọi cả 2 hooks data
   const searchResult = useSearchPapers();
@@ -25,7 +26,7 @@ function App() {
     isError, 
     error, 
     refetch, 
-    isRefetching 
+    isRefetching,
   } = currentView === 'search' ? searchResult : { ...libraryResult, data: filteredLibrary };
 
   // --- Heartbeat Logic (Keep Sidecar Alive) ---
@@ -33,6 +34,9 @@ function App() {
     const sendHeartbeat = async () => {
       try {
         await apiClient.get('/health');
+        if (!isBackendReady) {
+          setBackendReady(true);
+        }
       } catch (e) {
         // Silent error
       }
@@ -40,7 +44,7 @@ function App() {
     sendHeartbeat();
     const interval = setInterval(sendHeartbeat, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isBackendReady, setBackendReady]);
 
   // --- Theme Sync Logic ---
   useEffect(() => {
@@ -127,6 +131,8 @@ function App() {
         )}
 
       </main>
+
+      <LMSettingsModal />
     </div>
   );
 }

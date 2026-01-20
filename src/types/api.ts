@@ -20,3 +20,25 @@ export interface SearchFilters {
     endDate?: string;   // YYYY-MM-DD
     categories: string[];
 }
+
+export interface LMSettingResponse {
+    active_provider: string;
+    provider_configs: Record<string, Record<string, any>>; // { "gemini": { "model": "..." } }
+    keys_status: Record<string, boolean>; // { "gemini": true, "openrouter": false }
+}
+
+export interface LMSettingUpdate {
+    active_provider?: string;
+    config_update?: Record<string, Record<string, any>>;
+    api_key_update?: Record<string, string>;
+    keys_to_delete?: string[];
+}
+
+export interface SummaryRequest {
+    text: string;
+    language?: string; // "Vietnamese" | "English"
+}
+
+export interface SummaryResponse {
+    summary: string;
+}

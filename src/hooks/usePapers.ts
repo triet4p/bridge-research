@@ -29,7 +29,7 @@ const fetchLibrary = async (): Promise<Paper[]> => {
 // Custom Hook dùng trong Component
 export const useSearchPapers = () => {
     // Lấy state từ Store
-    const { searchQuery, filters, currentView } = useAppStore();
+    const { searchQuery, filters, currentView, isBackendReady } = useAppStore();
 
     return useQuery({
         // Key định danh cho request này (phụ thuộc vào query và filters)
@@ -39,17 +39,21 @@ export const useSearchPapers = () => {
         queryFn: () => fetchPapers(searchQuery, filters),
         
         // Chỉ chạy khi có query
-        enabled: currentView === 'search',
+        enabled: isBackendReady && currentView === 'search',
         
         // Giữ data cũ trong khi đang fetch mới (UX mượt hơn)
         placeholderData: (previousData) => previousData,
+
+        retry: isBackendReady ? 1 : 0 ,
     });
 };
 
 export const useLibrary = () => {
+    const { isBackendReady } = useAppStore();
     return useQuery({
         queryKey: ['papers', 'library'],
         queryFn: fetchLibrary,
+        enabled: isBackendReady
     });
 };
 

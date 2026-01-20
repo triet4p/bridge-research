@@ -1,6 +1,6 @@
 // src/components/layout/Header.tsx
 import React, { useState } from 'react';
-import { Search, RefreshCw, Moon, Sun, Languages, Calendar as CalendarIcon, Filter, Check, Hash, BookOpen, Search as SearchIcon } from 'lucide-react';
+import { Search, RefreshCw, Moon, Sun, Languages, Calendar as CalendarIcon, Filter, Check, Hash, BookOpen, Search as SearchIcon, Settings } from 'lucide-react';
 import { useAppStore } from '../../stores/useAppStore';
 import { ARXIV_CATEGORIES } from '../../constants/defaults';
 
@@ -10,7 +10,7 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ onRefresh, isRefreshing }) => {
-    const { currentView, setView, searchQuery, setSearchQuery, isDarkMode, toggleTheme, filters, setFilters, language, setLanguage, t } = useAppStore();
+    const { openSettings, currentView, setView, searchQuery, setSearchQuery, isDarkMode, toggleTheme, filters, setFilters, language, setLanguage, t } = useAppStore();
     const [localQuery, setLocalQuery] = useState(searchQuery);
     const [showDateFilter, setShowDateFilter] = useState(false);
     const [showCatFilter, setShowCatFilter] = useState(false); // State cho dropdown category
@@ -191,6 +191,14 @@ export const Header: React.FC<HeaderProps> = ({ onRefresh, isRefreshing }) => {
                             className="p-2 rounded-xl border border-gray-200 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800 text-gray-500 transition-all"
                         >
                             {isDarkMode ? <Moon size={18} /> : <Sun size={18} />}
+                        </button>
+
+                        <button 
+                            onClick={openSettings}
+                            className="p-2 rounded-xl border border-gray-200 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800 text-gray-500 transition-all"
+                            title="AI Settings"
+                        >
+                            <Settings size={18} />
                         </button>
                     </div>
                 </div>

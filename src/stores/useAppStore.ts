@@ -14,12 +14,17 @@ interface AppState {
     t: typeof TRANSLATIONS['en'];
 
     currentView: ViewMode;
+    isSettingsOpen: boolean;
+    isBackendReady: boolean;
     
     setSearchQuery: (query: string) => void;
     setFilters: (filters: Partial<SearchFilters>) => void;
     toggleTheme: () => void;
     setLanguage: (lang: 'en' | 'vi') => void;
     setView: (view: ViewMode) => void; 
+    openSettings: () => void;
+    closeSettings: () => void;
+    setBackendReady: (status: boolean) => void;
 }
 
 const DEFAULT_FILTERS: SearchFilters = {
@@ -40,6 +45,9 @@ export const useAppStore = create<AppState>((set) => ({
 
     currentView: 'search',
 
+    isSettingsOpen: false,
+    isBackendReady: false,
+
     setSearchQuery: (query) => set({ searchQuery: query }),
     
     setFilters: (newFilters) => set((state) => ({
@@ -55,5 +63,10 @@ export const useAppStore = create<AppState>((set) => ({
         t: TRANSLATIONS[lang] 
     }),
 
-    setView: (view) => set({ currentView: view })
+    setView: (view) => set({ currentView: view }),
+
+    openSettings: () => set({ isSettingsOpen: true }),
+    closeSettings: () => set({ isSettingsOpen: false }),
+
+    setBackendReady: (status) => set({ isBackendReady: status }),
 }));

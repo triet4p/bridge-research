@@ -4,19 +4,16 @@ import subprocess
 import platform
 import sys
 
-# 1. Xác định đường dẫn tuyệt đối dựa trên vị trí file script này
-# Vị trí: python-sidecar/scripts/
+# 1. Xác định đường dẫn tuyệt đối
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-# Vị trí: python-sidecar/
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 
-# 2. Cấu hình đường dẫn (Tất cả đều tuyệt đối)
+# 2. Cấu hình đường dẫn
 BINARY_NAME = "bridge-ai-backend"
 SRC_PATH = os.path.join(PROJECT_ROOT, "src", "main.py")
 ENV_PATH = os.path.join(PROJECT_ROOT, ".env")
-# Output ra: python-sidecar/../src-tauri/binaries
 DIST_DIR = os.path.abspath(os.path.join(PROJECT_ROOT, "..", "src-tauri", "binaries"))
-WORK_PATH = os.path.join(PROJECT_ROOT, "build") # Folder tạm để build
+WORK_PATH = os.path.join(PROJECT_ROOT, "build")
 
 def get_target_triple():
     machine = platform.machine().lower()
@@ -34,18 +31,38 @@ def get_target_triple():
 def build():
     print(f"🚀 Starting Build Process...")
     print(f"   Root:   {PROJECT_ROOT}")
-    print(f"   Source: {SRC_PATH}")
-    print(f"   Env:    {ENV_PATH}")
     print(f"   Output: {DIST_DIR}")
 
-    # Tạo folder output nếu chưa có
     os.makedirs(DIST_DIR, exist_ok=True)
 
-    # Cấu hình --add-data
-    # Windows dùng ';', Mac/Linux dùng ':'
     separator = ";" if platform.system() == "Windows" else ":"
-    # Cú pháp: "path/to/source.env;." (Dấu chấm nghĩa là đặt vào root của file exe)
     add_data_arg = f"{ENV_PATH}{separator}."
+
+    # --- FIX: AGGRESSIVE IMPORTS ---
+    # collect-all: Gom hết mọi thứ của package (code, data, binaries)
+    # copy-metadata: Cần thiết cho các lib check version lúc runtime (như tqdm, regex)
+    
+    aggressive_args = [
+        # Gom toàn bộ module AI
+        "--collect-all", "litellm",
+        "--collect-all", "dspy",
+        "--collect-all", "tiktoken",
+        "--collect-all", "tiktoken_ext",
+        
+        # Copy metadata để tránh lỗi 'Package not found'
+        "--copy-metadata", "tqdm",
+        "--copy-metadata", "regex",
+        "--copy-metadata", "requests",
+        "--copy-metadata", "packaging",
+        "--copy-metadata", "filelock",
+        "--copy-metadata", "numpy",
+        "--copy-metadata", "tokenizers",
+        "--copy-metadata", "litellm",
+        
+        # Hidden imports bổ sung (đề phòng)
+        "--hidden-import", "tiktoken_ext.openai_public",
+        "--hidden-import", "tiktoken_ext",
+    ]
 
     cmd = [
         "pyinstaller",
@@ -55,26 +72,29 @@ def build():
         "--name", BINARY_NAME,
         "--distpath", DIST_DIR,
         "--workpath", WORK_PATH,
-        "--specpath", PROJECT_ROOT, # File .spec để ở root python-sidecar
-        "--add-data", add_data_arg, 
-        SRC_PATH
+        "--specpath", PROJECT_ROOT,
+        "--add-data", add_data_arg,
     ]
     
+    # Nối tham số aggressive vào
+    cmd.extend(aggressive_args)
+    
+    cmd.append(SRC_PATH)
+    
     try:
-        # Chạy lệnh build
+        print("🔨 Running PyInstaller (This might take a while)...")
         subprocess.run(cmd, check=True)
     except subprocess.CalledProcessError:
         print("❌ Build Failed.")
         sys.exit(1)
     
-    # Đổi tên file theo chuẩn Tauri Sidecar
+    # Rename logic
     target_triple = get_target_triple()
     ext = ".exe" if platform.system() == "Windows" else ""
     
     original_file = os.path.join(DIST_DIR, f"{BINARY_NAME}{ext}")
     target_file = os.path.join(DIST_DIR, f"{BINARY_NAME}-{target_triple}{ext}")
     
-    # Xóa file cũ nếu tồn tại
     if os.path.exists(target_file):
         os.remove(target_file)
         
