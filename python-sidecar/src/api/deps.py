@@ -10,6 +10,8 @@ from src.services.arxiv_service import ArxivService
 from src.services.paper_service import LocalPaperService
 from src.services.lm_setting_service import LMSettingService 
 from src.services.ai_service import AIService
+from src.services.pdf_service import PDFService
+from src.services.rag_service import RAGService
 
 # 1. Base Session
 SessionDep = Annotated[Session, Depends(get_session)]
@@ -37,8 +39,16 @@ def get_lm_setting_service(repo: LMSettingRepoDep) -> LMSettingService:
 def get_ai_service() -> AIService:
     return AIService()
 
+def get_pdf_service() -> PDFService:
+    return PDFService()
+
+def get_rag_service(pdf_service: 'PDFServiceDep') -> RAGService:
+    return RAGService(pdf_service)
+
 # Type Aliases
 ArxivServiceDep = Annotated[ArxivService, Depends(get_arxiv_service)]
 LocalPaperServiceDep = Annotated[LocalPaperService, Depends(get_local_paper_service)]
 LMSettingServiceDep = Annotated[LMSettingService, Depends(get_lm_setting_service)] 
 AIServiceDep = Annotated[AIService, Depends(get_ai_service)]
+PDFServiceDep = Annotated[PDFService, Depends(get_pdf_service)]
+RAGServiceDep = Annotated[RAGService, Depends(get_rag_service)]

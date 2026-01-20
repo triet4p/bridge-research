@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     LOGGING_HANDLER: str = 'console'
     LOGGING_FILE_DIR: str = '~/.bridge_research/logs'
     
+    # Local PDF Storage
+    PAPER_STORAGE_DIR: str = os.path.join(os.path.expanduser("~"), ".bridge_research", "papers")
+    
     model_config = SettingsConfigDict(
         env_file=get_env_path(),
         env_ignore_empty=True,
@@ -40,3 +43,5 @@ class Settings(BaseSettings):
     )
     
 settings = Settings()
+
+os.makedirs(settings.PAPER_STORAGE_DIR, exist_ok=True)
