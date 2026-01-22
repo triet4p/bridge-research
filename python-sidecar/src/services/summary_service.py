@@ -1,7 +1,7 @@
 import traceback
 import dspy
 from src.core.logger import get_logger
-from src.dto.ai_dto import SummaryRequest, SummaryResponse
+from src.dto.analysis_dto import SummaryRequest, SummaryResponse
 from src.services.lm_setting_service import get_active_lm
 
 logger = get_logger("[PythonSidecar AIService]")
@@ -36,7 +36,7 @@ class PaperSummarizerSignature(dspy.Signature):
     summary: str = dspy.OutputField(desc="The structured summary in Markdown format.")
 
 # --- Service Implementation ---
-class AIService:
+class PaperSummaryService:
     def __init__(self):
         # Khởi tạo module DSPy (ChainOfThought giúp AI suy luận từng bước tốt hơn)
         self.summarizer_module = dspy.ChainOfThought(PaperSummarizerSignature)

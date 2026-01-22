@@ -42,3 +42,39 @@ export interface SummaryRequest {
 export interface SummaryResponse {
     summary: string;
 }
+
+export interface TocNode {
+    id: string;
+    title: string;
+    level: number;
+    preview: string;
+    children: TocNode[];
+}
+
+export interface ParsedDocument {
+    paper_id: string;
+    toc: TocNode[];
+    content_map: Record<string, string>;
+}
+
+export interface AnalysisStatus {
+    paper_id: string;
+    is_analyzed: boolean;
+}
+
+export interface ChatMessage {
+    role: 'user' | 'assistant';
+    content: string;
+}
+
+export interface ChatRequest {
+    paper_id: string;
+    pdf_url: string; // Cần URL để backend download nếu chưa có
+    message: string;
+    history?: ChatMessage[];
+}
+
+export interface ChatResponse {
+    answer: string;
+    references: string[]; // List section_id
+}

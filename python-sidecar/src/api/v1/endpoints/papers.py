@@ -3,8 +3,14 @@ from fastapi import APIRouter, Query, HTTPException
 from typing import List
 
 from src.dto.paper_dto import PaperResponse
-# Import Dependencies
-from src.api.deps import ArxivServiceDep, LocalPaperServiceDep
+from src.dto.analysis_dto import SummaryRequest, SummaryResponse, ChatRequest, ChatResponse, ParsedDocument
+from src.api.deps import (
+    ArxivServiceDep, 
+    LocalPaperServiceDep, 
+    SummaryServiceDep, 
+    ChatServiceDep,
+    ContentServiceDep
+)
 
 router = APIRouter()
 
@@ -48,3 +54,57 @@ def delete_paper(paper_id: str, service: LocalPaperServiceDep):
     if not success:
         raise HTTPException(status_code=404, detail="Paper not found")
     return {"status": "deleted", "paper_id": paper_id}
+
+@router.post("/summary", response_model=SummaryResponse)
+def generate_summary(req: SummaryRequest, service: SummaryServiceDep):
+    """Tạo tóm tắt cho bài báo"""
+    try:
+        return service.generate_summary(req)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{paper_id}/analysis-status")
+def check_analysis_status(paper_id: str, service: ContentServiceDep):
+    """Kiểm tra xem đã có ToC trong DB chưa"""
+    is_analyzed = service.get_analysis_status(paper_id)
+    return {"paper_id": paper_id, "is_analyzed": is_analyzed}
+
+@router.post("/{paper_id}/analyze", response_model=ParsedDocument)
+def analyze_paper(
+    paper_id: str, 
+    pdf_url: str, # Body param hoặc Query param đều được, ở đây ta dùng Query cho nhanh
+    service: ContentServiceDep
+):
+    """Trigger quá trình Download -> Parse -> Save DB"""
+    try:
+        return service.analyze_paper(paper_id, pdf_url)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/{paper_id}/analysis")
+def delete_analysis(paper_id: str, content_service: ContentServiceDep,
+                    chat_service: ChatServiceDep):
+    """Xóa Cache phân tích & File PDF"""
+    success_content = content_service.delete_analysis(paper_id)
+    success_chat = chat_service.delete_history(paper_id)
+    success = success_content and success_chat
+    return {"status": "deleted" if success else "not_found"}
+
+@router.post("/chat", response_model=ChatResponse)
+def chat_with_paper(req: ChatRequest, service: ChatServiceDep):
+    """Chat với bài báo (Yêu cầu đã Analyze trước)"""
+    try:
+        return service.chat(req)
+    except ValueError as ve:
+        if str(ve) == "PAPER_NOT_ANALYZED":
+            raise HTTPException(status_code=400, detail="PAPER_NOT_ANALYZED")
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.get("/{paper_id}/history")
+def get_chat_history(paper_id: str, service: ChatServiceDep):
+    """Lấy toàn bộ lịch sử chat của bài báo này"""
+    return service.get_history(paper_id)

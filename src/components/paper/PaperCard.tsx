@@ -6,17 +6,18 @@ import { formatAbstract } from '../../utils/textFormatter';
 import { useAppStore } from '../../stores/useAppStore';
 import { getCategoryLabel, getCategoryDesc } from '../../constants/defaults';
 import { useSavePaper, useDeletePaper } from '../../hooks/usePapers';
-import { useAISummary } from '../../hooks/useAI';
+import { useGenerateSummary } from '../../hooks/usePaperAnalysis';
 import ReactMarkdown from 'react-markdown';
+import { useChatStore } from '../../stores/useChatStore';
 
 interface PaperCardProps {
     paper: Paper;
-    onChat?: (paper: Paper) => void;
 }
 
-export const PaperCard: React.FC<PaperCardProps> = ({ paper, onChat }) => {
+export const PaperCard: React.FC<PaperCardProps> = ({ paper }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const { t, language } = useAppStore();
+    const { openChat } = useChatStore();
     
     // Data Mutations
     const saveMutation = useSavePaper();
@@ -24,8 +25,8 @@ export const PaperCard: React.FC<PaperCardProps> = ({ paper, onChat }) => {
     
     // AI Mutation & State
     const [aiSummary, setAiSummary] = useState<string | null>(null);
-    const [hasRequested, setHasRequested] = useState(false); // <-- FIX: State neo giữ khung UI
-    const summaryMutation = useAISummary();
+    const [hasRequested, setHasRequested] = useState(false);
+    const summaryMutation = useGenerateSummary();
 
     const isProcessing = saveMutation.isPending || deleteMutation.isPending;
 
@@ -193,7 +194,10 @@ export const PaperCard: React.FC<PaperCardProps> = ({ paper, onChat }) => {
                         <button onClick={() => openExternal(`https://arxiv.org/abs/${paper.paper_id}`)} className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all" title="ArXiv Page"><ExternalLink size={18} /></button>
                         
                         <button 
-                            onClick={() => onChat?.(paper)}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                openChat(paper);
+                            }}
                             className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-lg shadow-blue-500/20 transition-all flex items-center gap-2 active:scale-95 ml-1"
                         >
                             <MessageSquareText size={16} />

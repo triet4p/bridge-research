@@ -1,3 +1,5 @@
+from datetime import datetime
+import json
 import os
 import pymupdf
 import requests
@@ -7,32 +9,92 @@ from typing import List, Dict, Tuple
 
 from src.core.config import settings
 from src.core.logger import get_logger
-from src.dto.rag_dto import ParsedDocument, TocNode
+from src.models.analysis import PaperAnalysis
+from src.repositories.analysis_repository import AnalysisRepository
+from src.dto.analysis_dto import ParsedDocument, TocNode
 
 logger = get_logger("[PythonSidecar PDFService]")
 
-class PDFService:
-    def __init__(self):
+class PaperContentService:
+    def __init__(self, repo: AnalysisRepository):
         self.storage_dir = settings.PAPER_STORAGE_DIR
+        self.repo = repo
+        
+    def get_analysis_status(self, paper_id: str) -> bool:
+        """Kiểm tra xem paper này đã được analyze chưa"""
+        return self.repo.get(paper_id) is not None
+    
+    def get_parsed_document(self, paper_id: str) -> ParsedDocument | None:
+        """Lấy dữ liệu đã phân tích từ DB"""
+        record = self.repo.get(paper_id)
+        if not record:
+            return None
+        
+        # Convert DB Model -> DTO
+        # Cần convert dict -> Pydantic model cho TocNode
+        toc_data = record.toc
+        toc_nodes = [TocNode.model_validate(node) for node in toc_data] # Đệ quy đơn giản nếu Pydantic hỗ trợ, hoặc cần hàm helper
 
-    def process_paper(self, paper_id: str, pdf_url: str) -> ParsedDocument:
+        return ParsedDocument(
+            paper_id=record.paper_id,
+            toc=toc_nodes,
+            content_map=record.content_map
+        )
+
+    def analyze_paper(self, paper_id: str, pdf_url: str) -> ParsedDocument:
         """
-        Pipeline chính: Download -> Convert -> Parse ToC
+        Thực hiện Indexing: Download -> Parse -> Save DB
         """
+        logger.info(f"🚀 Starting analysis for {paper_id}...")
+        
+        doc = self.get_parsed_document(paper_id)
+        if doc is not None:
+            logger.info(f'Paper is already exists')
+            return doc
+        
         # 1. Download
         file_path = self._download_pdf(paper_id, pdf_url)
         
-        # 2. Convert to Markdown
-        md_text = pymupdf4llm.to_markdown(pymupdf.open(file_path))
-        
-        # 3. Build ToC Tree
+        # 2. Parse Markdown
+        md_text = pymupdf4llm.to_markdown(file_path)
         toc, content_map = self._build_toc_tree(md_text)
+        
+        # 3. Save to DB
+        # Convert TocNode objects -> Dict để lưu JSON
+        toc_dicts = [node.model_dump() for node in toc]
+        
+        analysis_record = PaperAnalysis(
+            paper_id=paper_id,
+            toc_json=json.dumps(toc_dicts),
+            content_map_json=json.dumps(content_map),
+            pdf_local_path=file_path,
+            analyzed_at=datetime.now()
+        )
+        self.repo.save(analysis_record)
+        
+        logger.info(f"✅ Analysis saved to DB for {paper_id}")
         
         return ParsedDocument(
             paper_id=paper_id,
             toc=toc,
             content_map=content_map
         )
+
+    def delete_analysis(self, paper_id: str) -> bool:
+        """Xóa data trong DB và file PDF local"""
+        record = self.repo.get(paper_id)
+        if record:
+            # Xóa file PDF
+            if record.pdf_local_path and os.path.exists(record.pdf_local_path):
+                try:
+                    os.remove(record.pdf_local_path)
+                    logger.info(f"🗑️ Deleted local PDF: {record.pdf_local_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete PDF file: {e}")
+            
+            # Xóa DB
+            return self.repo.delete(paper_id)
+        return False
 
     def _download_pdf(self, paper_id: str, url: str) -> str:
         """Tải PDF nếu chưa có"""
@@ -142,7 +204,7 @@ class PDFService:
         
         # 2. Bold Numbered Header: **1. Introduction** hoặc **2.1 Method**
         # Giải thích: Bắt đầu bằng **, theo sau là số (1 hoặc 1.1), có thể có dấu chấm, khoảng trắng, tên, kết thúc **
-        re_bold_num = re.compile(r'^\*\*\s*(\d+(?:\.\d+)*)\.?\s+(.*?)\*\*\s*$')
+        re_bold_num = re.compile(r'^\*\*\s*(\d+(?:\.\d+)*)\.?\**\s*\**\s+(.*?)\*\*\s*$')
         
         # 3. Bold Keyword Header: **Abstract**, **References**
         re_bold_key = re.compile(r'^\*\*\s*(Abstract|Introduction|Related Work|Methodology|Experiments|Conclusion|References|Acknowledgments)\s*\*\*\s*$', re.IGNORECASE)

@@ -8,6 +8,7 @@ import { Loader2, AlertTriangle, FileText, BookOpen } from 'lucide-react';
 import { apiClient } from './lib/axios';
 import { useLibraryFilter } from './hooks/useLibraryFilter';
 import { LMSettingsModal } from './components/settings/LMSettingsModal';
+import { ChatModal } from './components/chat/ChatModal';
 
 function App() {
   const { isDarkMode, searchQuery, currentView, t, isBackendReady, setBackendReady } = useAppStore();
@@ -124,7 +125,6 @@ function App() {
               <PaperCard 
                 key={paper.paper_id} 
                 paper={paper} 
-                onChat={(p) => console.log("Chat with:", p.paper_id)} 
               />
             ))}
           </div>
@@ -133,6 +133,7 @@ function App() {
       </main>
 
       <LMSettingsModal />
+      <ChatModal />
     </div>
   );
 }

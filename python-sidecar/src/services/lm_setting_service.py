@@ -125,8 +125,10 @@ class LMSettingService:
         api_base = user_config.get("base_url") or defaults.get("default_base_url")
         if provider != 'ollama':
             api_key = KeyringManager.get_api_key(provider)
+            max_tokens = 16000
         else:
             api_key = 'dummy_key_for_ollama'
+            max_tokens = 32000
         
         if not api_key:
             logger.warning(f"⚠️ Missing API Key for {provider}")
@@ -137,18 +139,14 @@ class LMSettingService:
             if api_base: lm_kwargs["api_base"] = api_base
             
             # Khởi tạo LM mới
-            new_lm = dspy.LM(full_model, max_tokens=8192, temperature=0.7, **lm_kwargs)
+            new_lm = dspy.LM(full_model, max_tokens=max_tokens, temperature=0.7, **lm_kwargs)
             
-            # --- FIX: KHÔNG gọi dspy.settings.configure() ---
-            # Thay vào đó, gán vào biến toàn cục để Service khác dùng
             _ACTIVE_LM = new_lm
             
             logger.info(f"✅ DSPy Active LM Updated: {full_model}")
             
         except Exception as e:
             logger.error(f"❌ DSPy Config Error for {full_model}: {e}")
-
-    # --- FIX: Hàm static để lấy LM hiện tại ---
 
 def get_active_lm():
     global _ACTIVE_LM

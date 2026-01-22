@@ -31,7 +31,7 @@ def watchdog_process():
         elapsed = time.time() - last_interaction_time
         if elapsed > TIMEOUT_SECONDS:
             _logger.warning(f"⚠️ No activity for {elapsed:.1f}s. Shutting down sidecar.")
-            # os._exit(0)
+            os._exit(0)
 
 # --- APP SETUP ---
 init_db()

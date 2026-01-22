@@ -6,12 +6,14 @@ from sqlmodel import Session
 from src.core.database import get_session
 from src.repositories.paper_repository import PaperRepository
 from src.repositories.lm_setting_repository import LMSettingRepository 
+from src.repositories.analysis_repository import AnalysisRepository
+from src.repositories.chat_repository import ChatRepository
 from src.services.arxiv_service import ArxivService
 from src.services.paper_service import LocalPaperService
 from src.services.lm_setting_service import LMSettingService 
-from src.services.ai_service import AIService
-from src.services.pdf_service import PDFService
-from src.services.rag_service import RAGService
+from src.services.summary_service import PaperSummaryService
+from src.services.content_service import PaperContentService
+from src.services.chat_service import PaperChatService
 
 # 1. Base Session
 SessionDep = Annotated[Session, Depends(get_session)]
@@ -23,8 +25,16 @@ def get_paper_repo(session: SessionDep) -> PaperRepository:
 def get_lm_setting_repo(session: SessionDep) -> LMSettingRepository: 
     return LMSettingRepository(session)
 
+def get_analysis_repo(session: SessionDep) -> AnalysisRepository:
+    return AnalysisRepository(session)
+
+def get_chat_repo(session: SessionDep) -> ChatRepository:
+    return ChatRepository(session)
+
 RepoDep = Annotated[PaperRepository, Depends(get_paper_repo)]
 LMSettingRepoDep = Annotated[LMSettingRepository, Depends(get_lm_setting_repo)]
+AnalysisRepoDep = Annotated[AnalysisRepository, Depends(get_analysis_repo)]
+ChatRepoDep = Annotated[ChatRepository, Depends(get_chat_repo)]
 
 # 3. Services
 def get_arxiv_service(repo: RepoDep) -> ArxivService:
@@ -36,19 +46,22 @@ def get_local_paper_service(repo: RepoDep) -> LocalPaperService:
 def get_lm_setting_service(repo: LMSettingRepoDep) -> LMSettingService: 
     return LMSettingService(repo)
 
-def get_ai_service() -> AIService:
-    return AIService()
+def get_content_service(repo: AnalysisRepoDep) -> PaperContentService:
+    return PaperContentService(repo)
 
-def get_pdf_service() -> PDFService:
-    return PDFService()
+# --- Summary Service ---
+def get_summary_service() -> PaperSummaryService:
+    return PaperSummaryService()
 
-def get_rag_service(pdf_service: 'PDFServiceDep') -> RAGService:
-    return RAGService(pdf_service)
+# --- Chat Service ---
+def get_chat_service(content_service: 'ContentServiceDep', chat_repo: ChatRepoDep) -> PaperChatService:
+    return PaperChatService(content_service, chat_repo)
 
 # Type Aliases
 ArxivServiceDep = Annotated[ArxivService, Depends(get_arxiv_service)]
 LocalPaperServiceDep = Annotated[LocalPaperService, Depends(get_local_paper_service)]
 LMSettingServiceDep = Annotated[LMSettingService, Depends(get_lm_setting_service)] 
-AIServiceDep = Annotated[AIService, Depends(get_ai_service)]
-PDFServiceDep = Annotated[PDFService, Depends(get_pdf_service)]
-RAGServiceDep = Annotated[RAGService, Depends(get_rag_service)]
+ContentServiceDep = Annotated[PaperContentService, Depends(get_content_service)]
+SummaryServiceDep = Annotated[PaperSummaryService, Depends(get_summary_service)]
+ChatServiceDep = Annotated[PaperChatService, Depends(get_chat_service)]
+
