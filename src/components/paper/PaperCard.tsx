@@ -32,7 +32,7 @@ export const PaperCard: React.FC<PaperCardProps> = ({ paper }) => {
 
     const handleToggleSave = (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (paper.is_downloaded) {
+        if (paper.is_saved) {
             if (confirm(language === 'vi' ? "Xóa khỏi thư viện?" : "Remove from library?")) {
                 deleteMutation.mutate(paper.paper_id);
             }
@@ -65,7 +65,7 @@ export const PaperCard: React.FC<PaperCardProps> = ({ paper }) => {
     );
 
     return (
-        <div className={`group relative bg-white dark:bg-slate-900 rounded-2xl shadow-sm hover:shadow-xl hover:shadow-blue-500/10 transition-all duration-300 border ${paper.is_downloaded ? 'border-green-200 dark:border-green-900/50' : 'border-gray-100 dark:border-slate-800'}`}>
+        <div className={`group relative bg-white dark:bg-slate-900 rounded-2xl shadow-sm hover:shadow-xl hover:shadow-blue-500/10 transition-all duration-300 border ${paper.is_saved ? 'border-green-200 dark:border-green-900/50' : 'border-gray-100 dark:border-slate-800'}`}>
             <div className="p-6">
                 {/* Header Row (Giữ nguyên) */}
                 <div className="flex justify-between items-start mb-3">
@@ -81,13 +81,13 @@ export const PaperCard: React.FC<PaperCardProps> = ({ paper }) => {
                                 onClick={handleToggleSave}
                                 disabled={isProcessing}
                                 className={`px-2 py-0.5 text-[10px] font-bold rounded uppercase flex items-center gap-1 transition-all ${
-                                    paper.is_downloaded 
+                                    paper.is_saved 
                                     ? 'text-green-600 bg-green-50 dark:bg-green-900/30 dark:text-green-300 hover:bg-red-100 dark:hover:bg-red-900/50 hover:text-red-600' 
                                     : 'text-gray-400 bg-gray-100 dark:bg-slate-800 hover:bg-green-100 hover:text-green-600'
                                 }`}
                             >
                                 {isProcessing ? <Loader2 size={10} className="animate-spin"/> : <Save size={10} />}
-                                {paper.is_downloaded ? t.saved : "Save"}
+                                {paper.is_saved ? t.saved : "Save"}
                             </button>
                         </div>
                         

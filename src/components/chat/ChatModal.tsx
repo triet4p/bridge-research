@@ -1,103 +1,95 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { X, Send, Bot, User, FileText, Loader2, BrainCircuit, BookOpen, Sparkles, Trash2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { useChatStore } from '../../stores/useChatStore';
-import { useAnalysisStatus, useAnalyzePaper, useDeleteAnalysis, useReloadToc } from '../../hooks/usePaperAnalysis'; // Import hook mới
-import { usePaperChat, useChatHistory } from '../../hooks/usePaperChat';
-import { ChatMessage } from '../../types/api';
-import { TocItem } from './TocItem'; // Import Sub-component
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 
+import { useChatStore } from '../../stores/useChatStore';
+import { useAnalysisStatus, useAnalyzeWithSave, useDeleteAnalysis, useToc } from '../../hooks/usePaperAnalysis';
+import { usePaperChat, useChatHistory } from '../../hooks/usePaperChat';
+import { ChatMessage } from '../../types/api';
+import { TocItem } from './TocItem';
+
 export const ChatModal: React.FC = () => {
+    // 1. STORE & STATE
     const { isChatOpen, activePaper, closeChat, toc, setToc } = useChatStore();
-    
-    // Hooks
-    const { data: status, isLoading: checkingStatus } = useAnalysisStatus(activePaper?.paper_id || '', isChatOpen);
-    
-    // --- FIX: Load History từ Backend ---
-    const { data: serverHistory, isLoading: loadingHistory } = useChatHistory(
-        activePaper?.paper_id || '', 
-        isChatOpen && !!status?.is_analyzed // Chỉ load khi đã analyze xong
-    );
-
-    const analyzeMutation = useAnalyzePaper();
-    const chatMutation = usePaperChat();
-    const deleteAnalysisMutation = useDeleteAnalysis();
-    const reloadTocMutation = useReloadToc(); // Hook reload
-
-    // Local State
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    // Reset UI khi mở modal
-    useEffect(() => {
-        if (serverHistory) {
-            if (serverHistory.length > 0) {
-                setMessages(serverHistory);
-            } else {
-                // Nếu history rỗng -> Hiện lời chào mặc định (nhưng không lưu vào DB)
-                setMessages([{ role: 'assistant', content: `Hello! I'm ready to discuss "${activePaper?.title}".` }]);
-            }
-        }
-    }, [serverHistory, activePaper]);
+    // 2. HOOKS
+    const paperId = activePaper?.paper_id || '';
+    const shouldFetch = isChatOpen && !!paperId;
 
-    // Logic Load ToC nếu thiếu (Dùng Hook thay vì gọi trực tiếp)
+    // Check Status
+    const { data: status, isLoading: checkingStatus } = useAnalysisStatus(paperId, isChatOpen);
+    const isAnalyzed = !!status?.is_analyzed;
+
+    // Load History & ToC (Chỉ chạy khi đã analyze)
+    const { data: serverHistory, isLoading: loadingHistory } = useChatHistory(paperId, shouldFetch && isAnalyzed);
+    const { data: queryToc, isLoading: loadingToc } = useToc(paperId, shouldFetch && isAnalyzed);
+
+    // Mutations
+    const { trigger: analyzeWithSave, isPending: isAnalyzing, isSuccess: isAnalyzeSuccess, reset: resetAnalyzeState } = useAnalyzeWithSave();
+    const chatMutation = usePaperChat();
+    const deleteAnalysisMutation = useDeleteAnalysis();
+
+    // 3. EFFECTS
     useEffect(() => {
-        // Thêm điều kiện: Không reload nếu vừa mới xóa xong
-        const justDeleted = deleteAnalysisMutation.isSuccess;
-        
-        if (
-            isChatOpen && 
-            activePaper && 
-            status?.is_analyzed && 
-            !toc && 
-            !reloadTocMutation.isPending &&
-            !justDeleted // <--- FIX QUAN TRỌNG
-        ) {
-            reloadTocMutation.mutate(
-                { paperId: activePaper.paper_id, pdfUrl: activePaper.pdf_link },
-                { onSuccess: (data) => setToc(data) }
-            );
+        if (isChatOpen && activePaper) {
+            // 1. Xóa tin nhắn cũ (tránh hiện hồn ma)
+            setMessages([]);
+            
+            // 2. Reset trạng thái mutation (tránh UI tưởng là vừa analyze xong)
+            resetAnalyzeState();
+            
+            // 3. Reset input
+            setInput('');
         }
-    }, [
-        isChatOpen, 
-        activePaper, 
-        status?.is_analyzed, 
-        toc, 
-        deleteAnalysisMutation.isSuccess // Thêm vào deps
-    ]);
+    }, [isChatOpen, activePaper?.paper_id]);
+    // Sync History
+    useEffect(() => {
+        // Chỉ sync khi có data thật từ server
+        if (serverHistory && serverHistory.length > 0) {
+            setMessages(serverHistory);
+        } else if (isChatOpen && activePaper && messages.length === 0 && !loadingHistory) {
+            // Nếu server trả về rỗng và local cũng rỗng -> Hiện Welcome
+            setMessages([{ role: 'assistant', content: `Hello! I'm ready to discuss "${activePaper.title}".` }]);
+        }
+    }, [serverHistory, isChatOpen, activePaper, loadingHistory]);
+
+    // Sync ToC (Ưu tiên lấy từ Query, nếu queryToc null thì giữ nguyên toc trong store)
+    useEffect(() => {
+        if (queryToc) setToc(queryToc);
+    }, [queryToc, setToc]);
+
+    // Update ToC sau khi Analyze thành công
+    useEffect(() => {
+        if (isAnalyzeSuccess) {
+            // Logic useToc sẽ tự động fetch lại nhờ invalidateQueries ở hook useAnalyzeWithSave
+        }
+    }, [isAnalyzeSuccess]);
 
     // Auto-scroll
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, chatMutation.isPending]);
 
-    // Update ToC khi analyze xong
-    useEffect(() => {
-        if (analyzeMutation.isSuccess && analyzeMutation.data) {
-            setToc(analyzeMutation.data.toc);
-        }
-    }, [analyzeMutation.isSuccess, analyzeMutation.data]);
 
+    // 4. HANDLERS
     const handleAnalyze = () => {
-        if (!activePaper) return;
-        analyzeMutation.mutate({ 
-            paperId: activePaper.paper_id, 
-            pdfUrl: activePaper.pdf_link 
-        });
+        if (activePaper) analyzeWithSave(activePaper);
     };
 
     const handleDeleteAnalysis = () => {
         if (!activePaper) return;
-        if (confirm("Are you sure? This will delete the local PDF and cached structure.")) {
+        if (confirm("Are you sure? This will delete the local PDF, cached structure, and chat history.")) {
             deleteAnalysisMutation.mutate(activePaper.paper_id, {
                 onSuccess: () => {
                     setToc(null);
-                    // Reset messages để tránh người dùng chat tiếp với ngữ cảnh cũ
                     setMessages([]);
+                    resetAnalyzeState();
                 }
             });
         }
@@ -107,7 +99,6 @@ export const ChatModal: React.FC = () => {
         if (!activePaper || !input.trim() || chatMutation.isPending) return;
 
         const userMsg: ChatMessage = { role: 'user', content: input };
-        // Optimistic Update: Hiện ngay tin nhắn user
         setMessages(prev => [...prev, userMsg]);
         setInput('');
 
@@ -116,7 +107,6 @@ export const ChatModal: React.FC = () => {
                 paper_id: activePaper.paper_id,
                 pdf_url: activePaper.pdf_link,
                 message: userMsg.content,
-                // --- FIX: Không cần gửi history lên nữa, Backend tự lấy từ DB ---
             },
             {
                 onSuccess: (data) => {
@@ -124,7 +114,6 @@ export const ChatModal: React.FC = () => {
                     setMessages(prev => [...prev, botMsg]);
                 },
                 onError: (err) => {
-                    // Rollback hoặc hiện lỗi
                     const errorMsg: ChatMessage = { role: 'assistant', content: `❌ Error: ${(err as any).response?.data?.detail || "Chat failed."}` };
                     setMessages(prev => [...prev, errorMsg]);
                 }
@@ -134,12 +123,16 @@ export const ChatModal: React.FC = () => {
 
     if (!isChatOpen || !activePaper) return null;
 
-    // --- RENDER ---
+    // Logic hiển thị giao diện Chat
+    // Hiển thị khi: Đã analyze (theo status) HOẶC Vừa analyze xong (success mutation)
+    const showChatInterface = isAnalyzed || isAnalyzeSuccess;
+
+    // 5. RENDER
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-200">
             <div className="bg-white dark:bg-slate-900 w-full max-w-6xl h-[85vh] rounded-2xl shadow-2xl border border-gray-200 dark:border-slate-800 flex overflow-hidden">
                 
-                {/* LEFT SIDEBAR */}
+                {/* --- LEFT SIDEBAR: Structure --- */}
                 <div className="w-1/4 min-w-[250px] bg-gray-50 dark:bg-slate-950 border-r border-gray-200 dark:border-slate-800 flex flex-col">
                     <div className="p-4 border-b border-gray-200 dark:border-slate-800">
                         <h3 className="font-bold text-gray-700 dark:text-gray-200 flex items-center gap-2">
@@ -148,33 +141,28 @@ export const ChatModal: React.FC = () => {
                     </div>
                     
                     <div className="flex-1 overflow-y-auto p-2">
-                        {checkingStatus || reloadTocMutation.isPending ? ( 
-                            // Case 1: Đang check status HOẶC đang load lại ToC
+                        {checkingStatus || loadingToc || isAnalyzing ? ( 
                             <div className="space-y-2 p-2 animate-pulse">
                                 <div className="h-4 bg-gray-200 dark:bg-slate-800 rounded w-3/4"></div>
                                 <div className="h-4 bg-gray-200 dark:bg-slate-800 rounded w-1/2"></div>
                                 <div className="h-4 bg-gray-200 dark:bg-slate-800 rounded w-full"></div>
                             </div>
-                        ) : !status?.is_analyzed && !analyzeMutation.isSuccess ? (
-                            // Case 2: Chưa analyze
+                        ) : !showChatInterface ? (
                             <div className="p-4 text-center text-gray-500 text-sm">
                                 <BookOpen size={40} className="mx-auto mb-2 opacity-50" />
                                 <p>Analyze the paper to view its structure and enable deep chat.</p>
                             </div>
-                        ) : toc ? (
-                            // Case 3: Đã có ToC -> Render cây
+                        ) : (toc || queryToc) ? (
                             <div className="space-y-1">
-                                {toc.map(node => <TocItem key={node.id} node={node} />)}
+                                {(toc || queryToc || []).map(node => <TocItem key={node.id} node={node} />)}
                             </div>
                         ) : (
-                            // Case 4: Đã analyze nhưng chưa có ToC (Hiếm gặp nếu logic trên đúng)
-                            // Có thể hiện nút Retry load ToC ở đây nếu cần
                             <div className="text-xs text-gray-400 p-2 italic">Structure data missing.</div>
                         )}
                     </div>
 
-                    {/* Footer Sidebar (Nút Xóa) */}
-                    {(status?.is_analyzed || analyzeMutation.isSuccess) && (
+                    {/* Delete Button */}
+                    {showChatInterface && (
                         <div className="p-3 border-t border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950">
                             <button 
                                 onClick={handleDeleteAnalysis}
@@ -188,8 +176,8 @@ export const ChatModal: React.FC = () => {
                     )}
                 </div>
 
-                {/* RIGHT MAIN */}
-                <div className="flex-1 flex flex-col relative">
+                {/* --- RIGHT MAIN: Chat Area --- */}
+                <div className="flex-1 flex flex-col relative min-w-0">
                     {/* Header */}
                     <div className="p-4 border-b border-gray-200 dark:border-slate-800 flex justify-between items-center bg-white dark:bg-slate-900">
                         <div className="flex-1 truncate pr-4">
@@ -201,14 +189,17 @@ export const ChatModal: React.FC = () => {
                         </button>
                     </div>
 
-                    {/* Chat Content */}
+                    {/* Content Container */}
                     <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-white dark:bg-slate-900">
+                        
+                        {/* CASE 1: Loading Status */}
                         {checkingStatus ? (
                             <div className="flex flex-col items-center justify-center h-full text-gray-400">
                                 <Loader2 size={40} className="animate-spin mb-2" />
                                 <p>Checking analysis status...</p>
                             </div>
-                        ) : !status?.is_analyzed && !analyzeMutation.isSuccess && !analyzeMutation.isPending ? (
+                        ) : !showChatInterface && !isAnalyzing ? (
+                            /* CASE 2: Not Analyzed -> Show Button */
                             <div className="flex flex-col items-center justify-center h-full space-y-6 opacity-80">
                                 <BrainCircuit size={80} className="text-blue-500 animate-pulse" />
                                 <div className="text-center max-w-md">
@@ -224,7 +215,8 @@ export const ChatModal: React.FC = () => {
                                     </button>
                                 </div>
                             </div>
-                        ) : analyzeMutation.isPending ? (
+                        ) : isAnalyzing ? (
+                            /* CASE 3: Analyzing... */
                             <div className="flex flex-col items-center justify-center h-full space-y-4">
                                 <Loader2 size={50} className="animate-spin text-blue-500" />
                                 <div className="text-center">
@@ -232,12 +224,14 @@ export const ChatModal: React.FC = () => {
                                     <p className="text-sm text-gray-500">Downloading PDF & Parsing Structure</p>
                                 </div>
                             </div>
-                        ) : loadingHistory ? ( // <-- Thêm điều kiện này
+                        ) : loadingHistory ? (
+                            /* CASE 4: Loading History */
                             <div className="flex flex-col items-center justify-center h-full text-gray-400 space-y-2">
                                 <Loader2 size={30} className="animate-spin" />
                                 <p>Loading conversation...</p>
                             </div>
                         ) : (
+                            /* CASE 5: Chat Interface */
                             <>
                                 {messages.map((msg, idx) => (
                                     <div key={idx} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -245,7 +239,7 @@ export const ChatModal: React.FC = () => {
                                             <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-indigo-600 text-white'}`}>
                                                 {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
                                             </div>
-                                            <div className={`p-4 rounded-2xl shadow-sm ${
+                                            <div className={`p-4 rounded-2xl shadow-sm overflow-hidden ${
                                                 msg.role === 'user' 
                                                     ? 'bg-blue-600 text-white rounded-tr-none' 
                                                     : 'bg-gray-100 dark:bg-slate-800 text-gray-800 dark:text-gray-200 rounded-tl-none border border-gray-200 dark:border-slate-700'
@@ -255,10 +249,9 @@ export const ChatModal: React.FC = () => {
                                                         remarkPlugins={[remarkGfm, remarkMath]}
                                                         rehypePlugins={[rehypeKatex]}
                                                         components={{
-                                                            // Custom style cho table
-                                                            table: ({node, ...props}) => <div className="overflow-x-auto my-4 border border-gray-200 dark:border-gray-700 rounded-lg"><table className="w-full text-sm text-left" {...props} /></div>,
-                                                            th: ({node, ...props}) => <th className="bg-gray-100 dark:bg-slate-800 px-4 py-2 font-bold border-b dark:border-gray-700" {...props} />,
-                                                            td: ({node, ...props}) => <td className="px-4 py-2 border-b dark:border-gray-700 last:border-0" {...props} />,
+                                                            table: ({node, ...props}) => <div className="overflow-x-auto my-4 border border-gray-200 dark:border-gray-700 rounded-lg max-w-full block"><table className="w-full text-sm text-left" {...props} /></div>,
+                                                            th: ({node, ...props}) => <th className="bg-gray-100 dark:bg-slate-800 px-4 py-2 font-bold border-b dark:border-gray-700 whitespace-nowrap" {...props} />,
+                                                            td: ({node, ...props}) => <td className="px-4 py-2 border-b dark:border-gray-700 last:border-0 min-w-[100px]" {...props} />,
                                                         }}
                                                     >
                                                         {msg.content}
@@ -290,7 +283,7 @@ export const ChatModal: React.FC = () => {
                     </div>
 
                     {/* Input Area */}
-                    {!checkingStatus && (status?.is_analyzed || analyzeMutation.isSuccess) && (
+                    {!checkingStatus && showChatInterface && !isAnalyzing && (
                         <div className="p-4 bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-800">
                             <div className="relative">
                                 <input

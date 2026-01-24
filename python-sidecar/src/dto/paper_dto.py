@@ -12,6 +12,6 @@ class PaperResponse(BaseModel):
     pdf_link: str
     category: str
     
-    is_downloaded: bool = False
+    is_saved: bool = False
     local_path: str | None = None
     read_status: PaperReadStatus = PaperReadStatus.UNREAD

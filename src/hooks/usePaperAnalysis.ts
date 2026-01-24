@@ -5,8 +5,11 @@ import {
     SummaryRequest, 
     SummaryResponse, 
     ParsedDocument, 
-    AnalysisStatus 
+    AnalysisStatus, 
+    Paper,
+    TocNode
 } from '../types/api';
+import { useSavePaper } from './usePapers';
 
 // 1. Tóm tắt (Summary)
 export const useGenerateSummary = () => {
@@ -68,19 +71,57 @@ export const useDeleteAnalysis = () => {
         },
         onSuccess: (_, paperId) => {
             queryClient.invalidateQueries({ queryKey: ['analysis_status', paperId] });
+            queryClient.removeQueries({ queryKey: ['paper_toc', paperId] });
+            queryClient.removeQueries({ queryKey: ['chat_history', paperId] });
+            
         }
     });
 };
 
-export const useReloadToc = () => {
-    return useMutation({
-        mutationFn: async (payload: { paperId: string; pdfUrl: string }) => {
-            const { data } = await apiClient.post<ParsedDocument>(
-                `/papers/${payload.paperId}/analyze`, 
-                null, 
-                { params: { pdf_url: payload.pdfUrl } }
-            );
-            return data.toc;
-        }
+export const useToc = (paperId: string, enabled: boolean) => {
+    return useQuery({
+        queryKey: ['paper_toc', paperId],
+        queryFn: async () => {
+            // --- FIX: Gọi API GET an toàn ---
+            const { data } = await apiClient.get<TocNode[]>(`/papers/${paperId}/toc`);
+            return data;
+        },
+        enabled: enabled && !!paperId,
+        staleTime: Infinity,
+        retry: false, // --- FIX: Không retry nếu lỗi 404 (để tránh spam) ---
     });
+};
+
+export const useAnalyzeWithSave = () => {
+    const saveMutation = useSavePaper();
+    const analyzeMutation = useAnalyzePaper();
+
+    const trigger = async (paper: Paper) => {
+        // 1. Nếu chưa save -> Gọi Save trước
+        if (!paper.is_saved) {
+            try {
+                await saveMutation.mutateAsync(paper);
+            } catch (error) {
+                console.error("Auto-save failed during analysis:", error);
+            }
+        }
+
+        // 2. Gọi Analyze
+        analyzeMutation.mutate({ 
+            paperId: paper.paper_id, 
+            pdfUrl: paper.pdf_link 
+        });
+    };
+
+    return {
+        trigger,
+        // Gộp trạng thái loading của cả 2
+        isPending: saveMutation.isPending || analyzeMutation.isPending,
+        isSuccess: analyzeMutation.isSuccess,
+        error: analyzeMutation.error || saveMutation.error,
+        reset: () => {
+            saveMutation.reset();
+            analyzeMutation.reset();
+        }
+    };
 };

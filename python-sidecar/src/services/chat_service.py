@@ -1,7 +1,7 @@
 # python-sidecar/src/services/rag_service.py
 import dspy
 import json
-from typing import List
+from typing import Dict, List
 import tiktoken
 
 from src.core.logger import get_logger
@@ -39,10 +39,24 @@ class AnswerGeneratorSignature(dspy.Signature):
     
     RULES:
     1. Use Markdown formatting.
-    2. Cite the sections you used (e.g., "According to Section 3...").
-    3. If the context does not contain the answer, say "I cannot find specific information about this in the selected sections."
-    4. Be concise but comprehensive.
-    5. Use 'chat_history' to resolve references (e.g. "it", "previous answer").
+    2. If the context does not contain the answer, say "I cannot find specific information about this in the selected sections."
+    3. Be concise but comprehensive.
+    4. Use 'chat_history' to resolve references (e.g. "it", "previous answer").
+    5. STRICT OUTPUT RULES:
+        1. **MATH & FORMULAS:** 
+        - You MUST use LaTeX formatting for all mathematical expressions.
+        - Enclose inline formulas in single dollar signs (e.g., $E=mc^2$).
+        - Enclose block formulas in double dollar signs (e.g., $$...$$).
+        - Do NOT use Unicode math symbols (like ∈, θ) directly; use LaTeX code (e.g., $\in$, $\theta$).
+        
+        2. **CITATIONS:**
+        - When citing information, you MUST include the Section Title.
+        - Format: "(Section [Number]: [Title])" 
+        - Example: "(Section 3.1: Problem Definition)", NOT "(Section 3)" or "(Sec 3)".
+        
+        3. **FORMATTING:**
+        - Use Markdown for bolding, lists, and tables.
+        - Keep the tone professional and academic.
     """
     
     context_text: str = dspy.InputField(desc="Full text content of the relevant sections.")
@@ -75,6 +89,9 @@ class PaperChatService:
         
         history_str = "\n".join([f"{msg.role}: {msg.content}" for msg in db_history])
         
+        title_map = self._build_title_map(doc.toc)
+        logger.info(title_map)
+        
         with dspy.context(lm=lm):
             # 3. Bước 1: Reasoning (Chọn Section)
             # Flatten ToC để tiết kiệm token (chỉ lấy ID, Title, Preview ngắn)
@@ -103,7 +120,7 @@ class PaperChatService:
             context_text = ""
             for sid in valid_ids:
                 # Tìm title để ngữ cảnh rõ ràng hơn
-                title = self._find_title_by_id(doc.toc, sid)
+                title = title_map.get(sid, "Unknown Section")
                 content = doc.content_map.get(sid, "")
                 context_text += f"\n\n--- SECTION {sid}: {title} ---\n{content}"
 
@@ -155,12 +172,11 @@ class PaperChatService:
         traverse(toc, simplified_toc)
         return json.dumps(simplified_toc, indent=2)
 
-    def _find_title_by_id(self, toc: List[TocNode], target_id: str) -> str:
-        """Helper tìm title theo ID"""
-        for node in toc:
-            if node.id == target_id:
-                return node.title
-            # Đệ quy
-            res = self._find_title_by_id(node.children, target_id)
-            if res: return res
-        return "Unknown Section"
+    def _build_title_map(self, nodes: List[TocNode]) -> Dict[str, str]:
+        mapping = {}
+        for node in nodes:
+            mapping[node.id] = node.title
+            # Đệ quy lấy con
+            if node.children:
+                mapping.update(self._build_title_map(node.children))
+        return mapping

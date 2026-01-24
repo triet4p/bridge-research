@@ -79,8 +79,11 @@ export const useDeletePaper = () => {
         mutationFn: async (paperId: string) => {
             await apiClient.delete(`/papers/${paperId}`);
         },
-        onSuccess: () => {
+        onSuccess: (_, paperId) => {
             queryClient.invalidateQueries({ queryKey: ['papers'] });
+            queryClient.invalidateQueries({ queryKey: ['analysis_status', paperId] });
+            queryClient.removeQueries({ queryKey: ['paper_toc', paperId] });
+            queryClient.removeQueries({ queryKey: ['chat_history', paperId] });
         }
     });
 };

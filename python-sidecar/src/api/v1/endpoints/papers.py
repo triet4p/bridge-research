@@ -3,7 +3,7 @@ from fastapi import APIRouter, Query, HTTPException
 from typing import List
 
 from src.dto.paper_dto import PaperResponse
-from src.dto.analysis_dto import SummaryRequest, SummaryResponse, ChatRequest, ChatResponse, ParsedDocument
+from src.dto.analysis_dto import SummaryRequest, SummaryResponse, ChatRequest, ChatResponse, ParsedDocument, TocNode
 from src.api.deps import (
     ArxivServiceDep, 
     LocalPaperServiceDep, 
@@ -45,12 +45,11 @@ def get_library(service: LocalPaperServiceDep):
 @router.post("/save", response_model=PaperResponse)
 def save_paper(paper: PaperResponse, service: LocalPaperServiceDep):
     service.save_paper(paper)
-    paper.is_downloaded = True
     return paper
 
 @router.delete("/{paper_id}")
 def delete_paper(paper_id: str, service: LocalPaperServiceDep):
-    success = service.remove_paper(paper_id)
+    success = service.delete_paper(paper_id)
     if not success:
         raise HTTPException(status_code=404, detail="Paper not found")
     return {"status": "deleted", "paper_id": paper_id}
@@ -84,13 +83,18 @@ def analyze_paper(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/{paper_id}/analysis")
-def delete_analysis(paper_id: str, content_service: ContentServiceDep,
-                    chat_service: ChatServiceDep):
+def delete_analysis(paper_id: str, service: ContentServiceDep):
     """Xóa Cache phân tích & File PDF"""
-    success_content = content_service.delete_analysis(paper_id)
-    success_chat = chat_service.delete_history(paper_id)
-    success = success_content and success_chat
+    success= service.delete_analysis(paper_id)
     return {"status": "deleted" if success else "not_found"}
+
+@router.get("/{paper_id}/toc", response_model=List[TocNode])
+def get_paper_toc(paper_id: str, service: ContentServiceDep):
+    """Lấy cấu trúc ToC (An toàn, không trigger analyze)"""
+    toc = service.get_toc(paper_id)
+    if toc is None:
+        raise HTTPException(status_code=404, detail="ToC not found. Please analyze first.")
+    return toc
 
 @router.post("/chat", response_model=ChatResponse)
 def chat_with_paper(req: ChatRequest, service: ChatServiceDep):

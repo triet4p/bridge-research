@@ -105,6 +105,10 @@ class ArxivService:
                     
                     # Check trạng thái đã lưu
                     is_saved = p_id in save_ids
+                    if is_saved:
+                        local_path = self.repo.get_by_id(p_id).local_path
+                    else:
+                        local_path = None
 
                     title = entry.find('atom:title', ARXIV_XML_NAMESPACE).text.replace('\n', ' ').strip()
                     summary = entry.find('atom:summary', ARXIV_XML_NAMESPACE).text.replace('\n', ' ').strip()
@@ -133,8 +137,8 @@ class ArxivService:
                         published=published,
                         pdf_link=pdf_link,
                         category=category,
-                        is_downloaded=is_saved,
-                        local_path=None, # Search ArXiv thì chưa có path local
+                        is_saved=is_saved,
+                        local_path=local_path,
                         read_status=PaperReadStatus.UNREAD
                     ))
                 except Exception as parse_err:

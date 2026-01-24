@@ -48,6 +48,8 @@ def build():
         "--collect-all", "dspy",
         "--collect-all", "tiktoken",
         "--collect-all", "tiktoken_ext",
+        "--collect-all", "pymupdf",
+        "--collect-all", "pymupdf4llm", 
         
         # Copy metadata để tránh lỗi 'Package not found'
         "--copy-metadata", "tqdm",

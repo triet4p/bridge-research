@@ -1,24 +1,74 @@
 from datetime import datetime
 import json
 import os
-import pymupdf
+import pymupdf.layout
 import requests
 import pymupdf4llm
 import re
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 
 from src.core.config import settings
 from src.core.logger import get_logger
 from src.models.analysis import PaperAnalysis
 from src.repositories.analysis_repository import AnalysisRepository
+from src.repositories.chat_repository import ChatRepository
+from src.services.local_paper_service import LocalPaperService
 from src.dto.analysis_dto import ParsedDocument, TocNode
 
 logger = get_logger("[PythonSidecar PDFService]")
 
 class PaperContentService:
-    def __init__(self, repo: AnalysisRepository):
+    def __init__(self, repo: AnalysisRepository,
+                 chat_repo: ChatRepository,
+                 local_paper_service: LocalPaperService):
         self.storage_dir = settings.PAPER_STORAGE_DIR
         self.repo = repo
+        self.chat_repo = chat_repo
+        self.local_paper_service = local_paper_service
+        self._init_patterns()
+        
+    def _init_patterns(self):
+        """Pre-compile all regex patterns once"""
+        # Numbered patterns with support for:
+        # - Pure numbers: 1, 1.2, 1.2.3
+        # - Letters: E, E.1, E.2.1
+        # - Roman: I, II, III, IV, V, ...
+        
+        # Core number/letter pattern
+        self.num_letter_pattern = r'[A-Z](?:\.\d+)*|\d+(?:\.\d+)*'
+        self.roman_pattern = r'I{1,3}|IV|V|VI{0,3}|IX|X|XI{0,3}'
+        self.full_num_pattern = f'(?:{self.num_letter_pattern}|{self.roman_pattern})'
+        
+        # Numbered header patterns (order matters!)
+        self.numbered_patterns = [
+            # **1. Introduction** or **E.1 Training**
+            re.compile(rf'^\*\*\s*({self.full_num_pattern})\.\s+([^*]+?)\*\*$'),
+            
+            # **1.2** Architecture (title not bold)
+            re.compile(rf'^\*\*\s*({self.full_num_pattern})\.\*\*\s+(.+)$'),
+            
+            # **1** **Introduction**
+            re.compile(rf'^\*\*\s*({self.full_num_pattern})\s*\*\*\s+\*\*([^*]+?)\*\*$'),
+            
+            # **1**. **Introduction**
+            re.compile(rf'^\*\*\s*({self.full_num_pattern})\s*\*\*\.\s+\*\*([^*]+?)\*\*$'),
+            
+            # 1. **Introduction** (number not bold)
+            re.compile(rf'^({self.full_num_pattern})\.\s+\*\*([^*]+?)\*\*$'),
+        ]
+        
+        # Keyword pattern
+        keywords = [
+            'Abstract', 'Introduction', 'Related Works?', 'Methods?', 
+            'Experiments?', 'Results?', 'Discussion', 'Conclusion', 
+            'References', 'Acknowledgments?', 'Appendix'
+        ]
+        keyword_regex = '|'.join(keywords)
+        self.keyword_pattern = re.compile(rf'^\*\*\s*({keyword_regex})\s*\*\*$', re.IGNORECASE)
+        
+        # Utility patterns
+        self.noise_pattern = re.compile(r'^[_#\s]*$')
+        self.markdown_pattern = re.compile(r'^#{1,6}\s+(.+)$')
         
     def get_analysis_status(self, paper_id: str) -> bool:
         """Kiểm tra xem paper này đã được analyze chưa"""
@@ -30,10 +80,8 @@ class PaperContentService:
         if not record:
             return None
         
-        # Convert DB Model -> DTO
-        # Cần convert dict -> Pydantic model cho TocNode
         toc_data = record.toc
-        toc_nodes = [TocNode.model_validate(node) for node in toc_data] # Đệ quy đơn giản nếu Pydantic hỗ trợ, hoặc cần hàm helper
+        toc_nodes = [TocNode.model_validate(node) for node in toc_data]
 
         return ParsedDocument(
             paper_id=record.paper_id,
@@ -49,18 +97,20 @@ class PaperContentService:
         
         doc = self.get_parsed_document(paper_id)
         if doc is not None:
-            logger.info(f'Paper is already exists')
+            logger.info(f'Paper already exists')
             return doc
         
-        # 1. Download
-        file_path = self._download_pdf(paper_id, pdf_url)
+        paper = self.local_paper_service.get_paper(paper_id)
+        if paper is None:
+            raise ValueError(f'Paper {paper_id} is not saved. Please save it.')
+        
+        file_path = paper.local_path
         
         # 2. Parse Markdown
         md_text = pymupdf4llm.to_markdown(file_path)
         toc, content_map = self._build_toc_tree(md_text)
         
         # 3. Save to DB
-        # Convert TocNode objects -> Dict để lưu JSON
         toc_dicts = [node.model_dump() for node in toc]
         
         analysis_record = PaperAnalysis(
@@ -81,191 +131,286 @@ class PaperContentService:
         )
 
     def delete_analysis(self, paper_id: str) -> bool:
-        """Xóa data trong DB và file PDF local"""
+        """
+        Chỉ xóa dữ liệu phân tích (ToC, Chat).
+        KHÔNG xóa PDF, KHÔNG xóa Metadata (để giữ trạng thái Saved trong Library).
+        """
+        logger.info(f"🗑️ Clearing analysis data for {paper_id}...")
+        
+        # 1. Xóa Chat
+        self.chat_repo.delete_history(paper_id)
+        
+        # 2. Xóa Analysis Record (ToC)
+        success = self.repo.delete(paper_id)
+        logger.info(f'Delete success')
+        return success
+    
+    def get_toc(self, paper_id: str) -> Optional[List[TocNode]]:
+        """Chỉ lấy cây ToC từ DB"""
         record = self.repo.get(paper_id)
-        if record:
-            # Xóa file PDF
-            if record.pdf_local_path and os.path.exists(record.pdf_local_path):
-                try:
-                    os.remove(record.pdf_local_path)
-                    logger.info(f"🗑️ Deleted local PDF: {record.pdf_local_path}")
-                except Exception as e:
-                    logger.warning(f"Failed to delete PDF file: {e}")
-            
-            # Xóa DB
-            return self.repo.delete(paper_id)
+        if not record:
+            return None
+        
+        # Convert JSON -> List[TocNode]
+        # Lưu ý: Cần logic đệ quy hoặc Pydantic parse
+        try:
+            # Giả sử TocNode là Pydantic model
+            return [TocNode(**node) for node in record.toc]
+        except Exception as e:
+            logger.error(f"Error parsing ToC JSON: {e}")
+            return []
+
+    def _clean_line(self, line: str) -> str:
+        """Làm sạch noise nhanh"""
+        return line.strip('_ \t#')
+
+    def _is_table_or_noise(self, text: str, line_idx: int, lines: List[str]) -> bool:
+        """
+        Check nếu text là table row hoặc noise, không phải header thật.
+        """
+        # Rule 1: Có nhiều dấu / (metrics như 31.41 / 0.831 / 0.101)
+        if text.count('/') >= 2:
+            return True
+        
+        # Rule 2: Bắt đầu bằng w/o, without, with (ablation rows)
+        if re.match(r'^[`\']*(w/o|without)\s+', text, re.IGNORECASE):
+            return True
+        
+        # Rule 3: Chứa >= 3 số decimal (35.72 / 0.879 / 0.066)
+        decimal_count = len(re.findall(r'\d+\.\d+', text))
+        if decimal_count >= 3:
+            return True
+        
+        # Rule 4: Title quá ngắn (<= 2 words) và toàn số
+        words = text.split()
+        if len(words) <= 2:
+            if all(re.match(r'^\d+(\.\d+)?$', w) for w in words):
+                return True
+        
+        # Rule 5: Check context - nếu dòng trước/sau có dấu | hoặc ---|---
+        # Đây là dấu hiệu của markdown table
+        context_range = 3  # Check 3 dòng trước và sau
+        start = max(0, line_idx - context_range)
+        end = min(len(lines), line_idx + context_range + 1)
+        
+        for i in range(start, end):
+            if i == line_idx:
+                continue
+            line = lines[i].strip()
+            # Table delimiter: |---|---|
+            if re.match(r'^[\|\s]*[-:]+[\|\s]*[-:]+', line):
+                return True
+            # Multiple pipes indicating table structure
+            if line.count('|') >= 2:
+                return True
+        
         return False
 
-    def _download_pdf(self, paper_id: str, url: str) -> str:
-        """Tải PDF nếu chưa có"""
-        # Clean ID để làm tên file an toàn
-        safe_id = re.sub(r'[^\w\-_\.]', '_', paper_id)
-        file_path = os.path.join(self.storage_dir, f"{safe_id}.pdf")
+    def _extract_header(self, line: str, line_idx: int, lines: List[str]) -> Optional[dict]:
+        """
+        Extract header từ một dòng với context awareness.
+        Returns: {'number': str, 'title': str, 'type': str} or None
+        """
+        if 'Component Ablation' in line:
+            print(line)
+        line = self._clean_line(line)
+        
+        
+        # Skip empty or noise lines
+        if not line or self.noise_pattern.match(line):
+            return None
+        
+        # Strip markdown prefix if exists
+        if line.startswith('#'):
+            md_match = self.markdown_pattern.match(line)
+            if md_match:
+                line = md_match.group(1).strip()
+        
+        # Try numbered patterns first (most common)
+        for pattern in self.numbered_patterns:
+            match = pattern.match(line)
+            if match:
+                number = match.group(1)
+                title = match.group(2).strip()
+                
+                # Filter out table rows with context
+                if self._is_table_or_noise(title, line_idx, lines):
+                    return None
+                
+                return {
+                    'number': number,
+                    'title': title,
+                    'type': 'numbered'
+                }
+        
+        # Try keyword pattern
+        match = self.keyword_pattern.match(line)
+        if match:
+            return {
+                'number': None,
+                'title': match.group(1).strip(),
+                'type': 'keyword'
+            }
+        
+        return None
 
-        if os.path.exists(file_path):
-            logger.info(f"📄 PDF already exists: {file_path}")
-            return file_path
 
-        logger.info(f"⬇️ Downloading PDF from {url}...")
-        try:
-            # ArXiv chặn User-Agent mặc định của python-requests
-            headers = {"User-Agent": "Mozilla/5.0 (BridgeResearchApp/0.1.0)"}
-            response = requests.get(url, headers=headers, stream=True, timeout=60)
-            response.raise_for_status()
-
-            with open(file_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            
-            logger.info(f"✅ Downloaded to: {file_path}")
-            return file_path
-        except Exception as e:
-            logger.error(f"❌ Download failed: {e}")
-            if os.path.exists(file_path): os.remove(file_path) # Xóa file lỗi
-            raise e
+    def _calculate_level(self, number: Optional[str]) -> int:
+        """
+        Calculate level from numbering.
+        Examples:
+        - "1" -> 1, "1.2" -> 2, "1.2.3" -> 3
+        - "E" -> 1, "E.1" -> 2, "E.2.1" -> 3
+        - "I", "II", "III" -> 1
+        """
+        if not number:
+            return 1  # Keywords are level 1
+        
+        # Roman numerals are always level 1
+        if re.match(r'^(I{1,3}|IV|V|VI{0,3}|IX|X|XI{0,3})$', number):
+            return 1
+        
+        # Single letter without dots (E, A, B) -> level 1
+        if len(number) == 1 and number.isalpha():
+            return 1
+        
+        # Count dots for level
+        # "1" -> 0 dots -> level 1
+        # "1.2" -> 1 dot -> level 2
+        # "E.1" -> 1 dot -> level 2
+        clean_num = number.rstrip('.')
+        return clean_num.count('.') + 1
 
     def _build_toc_tree(self, md_text: str) -> Tuple[List[TocNode], Dict[str, str]]:
+        """
+        Build TOC tree from markdown text.
+        """
         lines = md_text.split('\n')
+        
+        # PASS 1: Extract all header candidates
+        candidates = []
+        seen_positions = set()  # Track để tránh duplicate
+        
+        for i, line in enumerate(lines):
+            # Skip nếu đã process
+            if i in seen_positions:
+                continue
+            
+            header_info = self._extract_header(line, i, lines)  # Pass context
+            if header_info:
+                level = self._calculate_level(header_info['number'])
+                
+                # Build full title
+                if header_info['number']:
+                    title = f"{header_info['number']}. {header_info['title']}"
+                else:
+                    title = header_info['title']
+                
+                candidates.append({
+                    'line_idx': i,
+                    'level': level,
+                    'title': title,
+                    'type': header_info['type']
+                })
+                
+                seen_positions.add(i)
+        
+        logger.info(f"📋 Found {len(candidates)} headers")
+        
+        # PASS 2: Build tree structure
+        if not candidates:
+            node = TocNode(id="full_doc", title="Full Document", level=0, preview="", children=[])
+            return [node], {"full_doc": md_text}
+        
         root_nodes: List[TocNode] = []
         content_map: Dict[str, str] = {}
-        
         stack: List[Tuple[int, TocNode]] = []
-        current_content_lines = []
-        
-        # Node ảo ban đầu
-        intro_node = TocNode(id="intro", title="Abstract / Overview", level=0, preview="")
-        stack.append((0, intro_node))
-        root_nodes.append(intro_node)
-
         node_counter = 0
-
-        # Hàm helper lưu nội dung (Giữ nguyên logic cũ)
-        def save_buffer_to_current_node():
-            if not stack: return
-            nonlocal current_content_lines
-            full_text = "\n".join(current_content_lines).strip()
-            if not full_text: return
-
-            _, active_node = stack[-1]
+        
+        # Handle intro content (before first header)
+        first_header_line = candidates[0]['line_idx']
+        intro_content = "\n".join(lines[:first_header_line]).strip()
+        if intro_content:
+            intro_node = TocNode(
+                id="intro", 
+                title="Abstract / Overview", 
+                level=1, 
+                preview=self._generate_preview(intro_content), 
+                children=[]
+            )
+            root_nodes.append(intro_node)
+            stack.append((1, intro_node))
+            content_map["intro"] = intro_content
+        
+        # Build tree from candidates
+        for i, cand in enumerate(candidates):
+            level = cand['level']
+            title = cand['title'].replace('**', '').strip()
             
-            if active_node.id in content_map:
-                content_map[active_node.id] += "\n\n" + full_text
+            # Extract content between this header and next
+            start_line = cand['line_idx'] + 1
+            end_line = candidates[i+1]['line_idx'] if i + 1 < len(candidates) else len(lines)
+            content = "\n".join(lines[start_line:end_line]).strip()
+            
+            # Check if this node will have children
+            has_children = False
+            if i + 1 < len(candidates):
+                next_level = candidates[i+1]['level']
+                if next_level > level:
+                    has_children = True
+            
+            # Skip empty leaf nodes
+            if not content and not has_children:
+                continue
+            
+            # Create node
+            node_id = f"sec_{node_counter}"
+            node_counter += 1
+            
+            new_node = TocNode(
+                id=node_id,
+                title=title,
+                level=level,
+                preview=self._generate_preview(content),
+                children=[]
+            )
+            
+            # Find correct parent
+            while stack and stack[-1][0] >= level:
+                stack.pop()
+            
+            if stack:
+                parent_node = stack[-1][1]
+                parent_node.children.append(new_node)
             else:
-                content_map[active_node.id] = full_text
+                root_nodes.append(new_node)
             
-            # Smart Preview: Lấy đoạn văn đầu tiên
-            if not active_node.preview:
-                # 1. Gộp paragraph nếu quá ngắn
-                paragraphs = full_text.split('\n\n')
-                preview_text = paragraphs[0].replace('\n', ' ').strip()
-                
-                if len(preview_text) < 400 and len(paragraphs) > 1:
-                    second_para = paragraphs[1].replace('\n', ' ').strip()
-                    preview_text += " " + second_para
-
-                # 2. Clean Markdown
-                preview_text = re.sub(r'\*\*|__|_', '', preview_text)
-                
-                # 3. Smart Truncate Logic
-                LIMIT = 1000
-                
-                if len(preview_text) <= LIMIT:
-                    active_node.preview = preview_text
-                else:
-                    # Cắt thô tại giới hạn
-                    truncated = preview_text[:LIMIT]
-                    
-                    # Ưu tiên 1: Cắt tại dấu chấm câu cuối cùng (. ! ?)
-                    # Regex tìm dấu câu + khoảng trắng (hoặc hết chuỗi)
-                    # rfind không hỗ trợ regex, nên ta dùng loop đơn giản
-                    last_sentence_idx = -1
-                    for p in ['. ', '! ', '? ']:
-                        idx = truncated.rfind(p)
-                        if idx > last_sentence_idx:
-                            last_sentence_idx = idx
-                    
-                    # Nếu tìm thấy dấu chấm câu và nó không nằm quá xa (giữ lại ít nhất 50% nội dung)
-                    if last_sentence_idx > LIMIT * 0.7:
-                        active_node.preview = truncated[:last_sentence_idx + 1] # Lấy cả dấu chấm
-                    else:
-                        # Ưu tiên 2: Cắt tại khoảng trắng cuối cùng (ngắt từ)
-                        last_space_idx = truncated.rfind(' ')
-                        if last_space_idx != -1:
-                            active_node.preview = truncated[:last_space_idx] + "..."
-                        else:
-                            # Đường cùng: Cắt thô
-                            active_node.preview = truncated + "..."
-            
-            current_content_lines = []
-
-        # --- FIX: Regex nâng cao ---
-        # 1. Markdown Header chuẩn: # Title
-        re_md_header = re.compile(r'^(#+)\s+(.*)')
+            stack.append((level, new_node))
+            content_map[node_id] = content
         
-        # 2. Bold Numbered Header: **1. Introduction** hoặc **2.1 Method**
-        # Giải thích: Bắt đầu bằng **, theo sau là số (1 hoặc 1.1), có thể có dấu chấm, khoảng trắng, tên, kết thúc **
-        re_bold_num = re.compile(r'^\*\*\s*(\d+(?:\.\d+)*)\.?\**\s*\**\s+(.*?)\*\*\s*$')
-        
-        # 3. Bold Keyword Header: **Abstract**, **References**
-        re_bold_key = re.compile(r'^\*\*\s*(Abstract|Introduction|Related Work|Methodology|Experiments|Conclusion|References|Acknowledgments)\s*\*\*\s*$', re.IGNORECASE)
-
-        for line in lines:
-            line = line.strip()
-            if not line: continue 
-
-            level = -1
-            title = ""
-            
-            # Check 1: Standard Markdown Header (#)
-            match_md = re_md_header.match(line)
-            if match_md:
-                hashes, title_text = match_md.groups()
-                level = len(hashes)
-                title = title_text.strip()
-
-            # Check 2: Heuristic Bold Headers (Nếu không phải Markdown Header)
-            if level == -1:
-                match_bold_num = re_bold_num.match(line)
-                match_bold_key = re_bold_key.match(line)
-                
-                if match_bold_num:
-                    num_str, title_text = match_bold_num.groups()
-                    # Suy luận level dựa vào số dấu chấm: "1" -> Level 2, "1.1" -> Level 3
-                    # (Giả sử Level 1 là Title bài báo)
-                    level = 2 + num_str.count('.')
-                    title = f"{num_str}. {title_text.strip()}"
-                
-                elif match_bold_key:
-                    title_text = match_bold_key.group(1)
-                    level = 2 # Coi Abstract/Intro/Ref là Level 2 ngang hàng
-                    title = title_text.strip()
-
-            # --- Xử lý tạo Node ---
-            if level > 0:
-                save_buffer_to_current_node()
-                
-                node_id = f"sec_{node_counter}"
-                node_counter += 1
-                
-                # Clean title (bỏ bold nếu còn sót)
-                title = title.replace('**', '')
-                
-                new_node = TocNode(id=node_id, title=title, level=level, preview="")
-                
-                # Logic xếp cây (Stack)
-                while stack and stack[-1][0] >= level:
-                    stack.pop()
-                
-                if stack:
-                    parent = stack[-1][1]
-                    parent.children.append(new_node)
-                else:
-                    root_nodes.append(new_node) # Fallback nếu format lạ
-                
-                stack.append((level, new_node))
-            else:
-                # Dòng thường
-                current_content_lines.append(line)
-        
-        save_buffer_to_current_node()
         return root_nodes, content_map
+    
+    def _generate_preview(self, content: str, limit: int = 1000) -> str:
+        """Generate preview text from content"""
+        if not content:
+            return ""
+        
+        # Take first 2 paragraphs
+        paragraphs = content.split('\n\n', 2)
+        preview = paragraphs[0].replace('\n', ' ')
+        
+        if len(preview) < 500 and len(paragraphs) > 1:
+            preview += " " + paragraphs[1].replace('\n', ' ')
+        
+        # Clean markdown formatting
+        preview = re.sub(r'\*\*|__|_', '', preview)
+        
+        # Truncate at word boundary
+        if len(preview) > limit:
+            preview = preview[:limit]
+            last_space = preview.rfind(' ')
+            if last_space > 0:
+                preview = preview[:last_space]
+            preview += "..."
+        
+        return preview

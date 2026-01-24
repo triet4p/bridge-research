@@ -1,6 +1,9 @@
 from sqlmodel import Session
 from src.models.analysis import PaperAnalysis
 from typing import Optional
+from src.core.logger import get_logger
+
+logger = get_logger('[DEBUG AnalysisRepo]')
 
 class AnalysisRepository:
     def __init__(self, session: Session):
@@ -30,5 +33,8 @@ class AnalysisRepository:
         if analysis:
             self.session.delete(analysis)
             self.session.commit()
+            logger.info(f"✅ Deleted Analysis record for {paper_id}")
             return True
-        return False
+        else:
+            logger.warning(f"⚠️ Cannot delete: Analysis record for {paper_id} not found")
+            return False

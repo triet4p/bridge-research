@@ -17,6 +17,5 @@ class Paper(SQLModel, table=True):
     updated: datetime
     category: str
     pdf_link: str
-    is_downloaded: bool = Field(default=False)
     local_path: str | None = Field(default=None)
     read_status: PaperReadStatus = Field(default=PaperReadStatus.UNREAD)

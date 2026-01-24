@@ -9,7 +9,7 @@ export interface Paper {
     pdf_link: string;
     category: string;
     
-    is_downloaded?: boolean;
+    is_saved?: boolean;
     local_path?: string | null;
     read_status?: 'unread' | 'reading' | 'done';
 }
