@@ -2,14 +2,14 @@
 @chcp 65001 >nul
 SETLOCAL
 
-REM Lấy thư mục gốc của dự án (thư mục cha của folder scripts)
+REM Set the project root
 SET "SCRIPT_DIR=%~dp0"
 SET "PROJECT_ROOT=%SCRIPT_DIR%.."
 
-REM Di chuyển về root
+REM Move to root
 cd /d "%PROJECT_ROOT%"
 
-REM Kiểm tra tham số truyền vào
+REM Check flags
 IF "%1"=="--rebuild-sidecar" (
     ECHO.
     ECHO [DEV-SCRIPT] 🛠️  Found flag --rebuild-sidecar. Rebuilding Python backend...
@@ -17,10 +17,8 @@ IF "%1"=="--rebuild-sidecar" (
     
     cd python-sidecar
     
-    REM Gọi UV để chạy script build
     call uv run python -m scripts.build_sidecar
     
-    REM Kiểm tra lỗi build
     IF %ERRORLEVEL% NEQ 0 (
         ECHO [DEV-SCRIPT] ❌ Build Failed! Exiting...
         EXIT /B %ERRORLEVEL%

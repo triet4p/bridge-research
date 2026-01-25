@@ -17,7 +17,7 @@ from src.core.logger import get_logger
 from src.api.v1.api import api_router
 from src.initialization import init_lm_setting
 
-_logger = get_logger('PythonSidecar')
+_logger = get_logger('[PythonSidecar - Main]')
 multiprocessing.freeze_support()
 
 # --- WATCHDOG LOGIC (Process Management) ---
@@ -46,7 +46,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Middleware update timestamp (Giữ ở main vì liên quan trực tiếp đến Watchdog global)
+# Middleware update timestamp 
 @app.middleware("http")
 async def update_last_interaction(request: Request, call_next):
     global last_interaction_time
@@ -54,7 +54,6 @@ async def update_last_interaction(request: Request, call_next):
     response = await call_next(request)
     return response
 
-# Include toàn bộ API từ v1
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 if __name__ == "__main__":

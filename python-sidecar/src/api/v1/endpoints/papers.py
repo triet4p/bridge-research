@@ -2,8 +2,8 @@
 from fastapi import APIRouter, Query, HTTPException
 from typing import List
 
-from src.dto.paper_dto import PaperResponse
-from src.dto.analysis_dto import SummaryRequest, SummaryResponse, ChatRequest, ChatResponse, ParsedDocument, TocNode
+from src.dto.local_paper import LocalPaperResponse
+from src.dto.analysis import SummaryRequest, SummaryResponse, ChatRequest, ChatResponse, ParsedDocument, TocNode
 from src.api.deps import (
     ArxivServiceDep, 
     LocalPaperServiceDep, 
@@ -14,8 +14,7 @@ from src.api.deps import (
 
 router = APIRouter()
 
-# --- SEARCH (ARXIV) ---
-@router.get("/search", response_model=List[PaperResponse])
+@router.get("/search", response_model=List[LocalPaperResponse])
 def search_papers(
     service: ArxivServiceDep, # <-- Tự động inject ArxivService (đã có repo bên trong)
     query: str | None = Query(None),
@@ -24,10 +23,15 @@ def search_papers(
     start_date: str | None = None,
     end_date: str | None = None
 ):
+    """
+    Searches ArXiv for papers matching the criteria.
+    
+    Automatically checks against the local database to mark papers as 
+    'saved' (is_downloaded=True) in the response.
+    """
     if not query and not categories:
         categories = ["cs.AI", "cs.LG", "cs.CV", "cs.CL"]
 
-    # Không cần truyền repo nữa vì service đã có sẵn
     return service.search_papers(
         query=query, 
         categories=categories,
@@ -36,19 +40,33 @@ def search_papers(
         end_date=end_date
     )
 
-# --- LOCAL LIBRARY ---
 
-@router.get("/library", response_model=List[PaperResponse])
+@router.get("/library", response_model=List[LocalPaperResponse])
 def get_library(service: LocalPaperServiceDep):
+    """
+    Retrieves all papers saved in the local library.
+    Sorted by publication date (newest first).
+    """
     return service.get_library()
 
-@router.post("/save", response_model=PaperResponse)
-def save_paper(paper: PaperResponse, service: LocalPaperServiceDep):
-    service.save_paper(paper)
-    return paper
+@router.post("/save", response_model=LocalPaperResponse)
+def save_paper(paper: LocalPaperResponse, service: LocalPaperServiceDep):
+    """
+    Saves a paper's (include metadata, pdf) to the local database.
+    """
+    return service.save_paper(paper)
 
 @router.delete("/{paper_id}")
 def delete_paper(paper_id: str, service: LocalPaperServiceDep):
+    """
+    Hard delete: Removes the paper from the library.
+    
+    Cascading effects:
+    - Deletes metadata from DB.
+    - Deletes local PDF file.
+    - Deletes analysis data (ToC, Content Map).
+    - Deletes chat history.
+    """
     success = service.delete_paper(paper_id)
     if not success:
         raise HTTPException(status_code=404, detail="Paper not found")
@@ -56,7 +74,10 @@ def delete_paper(paper_id: str, service: LocalPaperServiceDep):
 
 @router.post("/summary", response_model=SummaryResponse)
 def generate_summary(req: SummaryRequest, service: SummaryServiceDep):
-    """Tạo tóm tắt cho bài báo"""
+    """
+    Generates a structured summary using the configured LLM.
+    Does not require the PDF to be downloaded (uses the Abstract).
+    """
     try:
         return service.generate_summary(req)
     except ValueError as ve:
@@ -66,17 +87,26 @@ def generate_summary(req: SummaryRequest, service: SummaryServiceDep):
 
 @router.get("/{paper_id}/analysis-status")
 def check_analysis_status(paper_id: str, service: ContentServiceDep):
-    """Kiểm tra xem đã có ToC trong DB chưa"""
+    """
+    Checks if the paper has been parsed and indexed (ToC exists).
+    Used by UI to decide whether to show 'Start Analysis' or 'Chat'.
+    """
     is_analyzed = service.get_analysis_status(paper_id)
     return {"paper_id": paper_id, "is_analyzed": is_analyzed}
 
 @router.post("/{paper_id}/analyze", response_model=ParsedDocument)
 def analyze_paper(
     paper_id: str, 
-    pdf_url: str, # Body param hoặc Query param đều được, ở đây ta dùng Query cho nhanh
+    pdf_url: str, 
     service: ContentServiceDep
 ):
-    """Trigger quá trình Download -> Parse -> Save DB"""
+    """
+    Triggers the deep analysis pipeline:
+    1. Auto-saves metadata (if missing).
+    2. Downloads PDF.
+    3. Parses PDF to Markdown/ToC.
+    4. Saves structure to DB.
+    """
     try:
         return service.analyze_paper(paper_id, pdf_url)
     except Exception as e:
@@ -84,13 +114,19 @@ def analyze_paper(
 
 @router.delete("/{paper_id}/analysis")
 def delete_analysis(paper_id: str, service: ContentServiceDep):
-    """Xóa Cache phân tích & File PDF"""
+    """
+    Clears cached analysis data (ToC, Chat History).
+    Does NOT remove the paper from the Library (metadata and PDF remain).
+    """
     success= service.delete_analysis(paper_id)
     return {"status": "deleted" if success else "not_found"}
 
 @router.get("/{paper_id}/toc", response_model=List[TocNode])
 def get_paper_toc(paper_id: str, service: ContentServiceDep):
-    """Lấy cấu trúc ToC (An toàn, không trigger analyze)"""
+    """
+    Retrieves the cached Table of Contents tree.
+    Returns 404 if the paper hasn't been analyzed yet.
+    """
     toc = service.get_toc(paper_id)
     if toc is None:
         raise HTTPException(status_code=404, detail="ToC not found. Please analyze first.")
@@ -98,7 +134,13 @@ def get_paper_toc(paper_id: str, service: ContentServiceDep):
 
 @router.post("/chat", response_model=ChatResponse)
 def chat_with_paper(req: ChatRequest, service: ChatServiceDep):
-    """Chat với bài báo (Yêu cầu đã Analyze trước)"""
+    """
+    Performs Reasoning-based RAG:
+    1. Selects relevant sections based on ToC + Question.
+    2. Retrieves content.
+    3. Generates answer using LLM.
+    4. Saves conversation to history.
+    """
     try:
         return service.chat(req)
     except ValueError as ve:
@@ -110,5 +152,7 @@ def chat_with_paper(req: ChatRequest, service: ChatServiceDep):
     
 @router.get("/{paper_id}/history")
 def get_chat_history(paper_id: str, service: ChatServiceDep):
-    """Lấy toàn bộ lịch sử chat của bài báo này"""
+    """
+    Retrieves the full chat history for a specific paper.
+    """
     return service.get_history(paper_id)

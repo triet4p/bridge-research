@@ -2,7 +2,7 @@
 @chcp 65001 >nul
 SETLOCAL
 
-REM --- CẤU HÌNH ---
+REM --- Configuration ---
 SET "SCRIPT_DIR=%~dp0"
 SET "PROJECT_ROOT=%SCRIPT_DIR%.."
 

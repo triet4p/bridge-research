@@ -1,26 +1,36 @@
-# python-sidecar/src/api/deps.py
+"""
+Dependency Injection (DI) Configuration.
+
+This module defines the dependencies used by FastAPI routers. It orchestrates
+the creation of Repositories and Services, ensuring they are initialized with
+the correct database sessions and dependent objects.
+
+FastAPI's `Depends` system handles the lifecycle of these objects (creation
+and cleanup) automatically per request.
+"""
+
 from typing import Annotated
 from fastapi import Depends
 from sqlmodel import Session
 
 from src.core.database import get_session
-from src.repositories.paper_repository import PaperRepository
-from src.repositories.lm_setting_repository import LMSettingRepository 
-from src.repositories.analysis_repository import AnalysisRepository
-from src.repositories.chat_repository import ChatRepository
-from src.services.arxiv_service import ArxivService
-from src.services.local_paper_service import LocalPaperService
-from src.services.lm_setting_service import LMSettingService 
-from src.services.summary_service import PaperSummaryService
-from src.services.content_service import PaperContentService
-from src.services.chat_service import PaperChatService
+from src.repositories.local_paper import LocalPaperRepository
+from src.repositories.lm_setting import LMSettingRepository 
+from src.repositories.analysis import AnalysisRepository
+from src.repositories.chat import ChatRepository
+from src.services.arxiv import ArxivService
+from src.services.local_paper import LocalPaperService
+from src.services.lm_setting import LMSettingService 
+from src.services.summary import PaperSummaryService
+from src.services.paper_content import PaperContentService
+from src.services.paper_chat import PaperChatService
 
 # 1. Base Session
 SessionDep = Annotated[Session, Depends(get_session)]
 
 # 2. Repositories
-def get_paper_repo(session: SessionDep) -> PaperRepository:
-    return PaperRepository(session)
+def get_local_paper_repo(session: SessionDep) -> LocalPaperRepository:
+    return LocalPaperRepository(session)
 
 def get_lm_setting_repo(session: SessionDep) -> LMSettingRepository: 
     return LMSettingRepository(session)
@@ -31,39 +41,37 @@ def get_analysis_repo(session: SessionDep) -> AnalysisRepository:
 def get_chat_repo(session: SessionDep) -> ChatRepository:
     return ChatRepository(session)
 
-RepoDep = Annotated[PaperRepository, Depends(get_paper_repo)]
+LocalPaperRepoDep = Annotated[LocalPaperRepository, Depends(get_local_paper_repo)]
 LMSettingRepoDep = Annotated[LMSettingRepository, Depends(get_lm_setting_repo)]
 AnalysisRepoDep = Annotated[AnalysisRepository, Depends(get_analysis_repo)]
 ChatRepoDep = Annotated[ChatRepository, Depends(get_chat_repo)]
 
 # 3. Services
-def get_arxiv_service(repo: RepoDep) -> ArxivService:
+def get_arxiv_service(repo: LocalPaperRepoDep) -> ArxivService:
     return ArxivService(repo)
 
 def get_local_paper_service(
-    repo: RepoDep, 
+    local_paper_repo: LocalPaperRepoDep, 
     analysis_repo: AnalysisRepoDep, 
     chat_repo: ChatRepoDep
 ) -> LocalPaperService:
-    return LocalPaperService(repo, analysis_repo, chat_repo)
+    return LocalPaperService(local_paper_repo, analysis_repo, chat_repo)
 
 def get_lm_setting_service(repo: LMSettingRepoDep) -> LMSettingService: 
     return LMSettingService(repo)
 
 def get_content_service(
-    repo: AnalysisRepoDep,
+    analysis_repo: AnalysisRepoDep,
     chat_repo: ChatRepoDep,
     local_paper_service: 'LocalPaperServiceDep'
 ) -> PaperContentService:
-    return PaperContentService(repo, chat_repo, local_paper_service)
+    return PaperContentService(analysis_repo, chat_repo, local_paper_service)
 
-# --- Summary Service ---
 def get_summary_service() -> PaperSummaryService:
     return PaperSummaryService()
 
-# --- Chat Service ---
-def get_chat_service(content_service: 'ContentServiceDep', chat_repo: ChatRepoDep) -> PaperChatService:
-    return PaperChatService(content_service, chat_repo)
+def get_chat_service(chat_repo: ChatRepoDep, content_service: 'ContentServiceDep') -> PaperChatService:
+    return PaperChatService(chat_repo, content_service)
 
 # Type Aliases
 ArxivServiceDep = Annotated[ArxivService, Depends(get_arxiv_service)]
@@ -72,4 +80,3 @@ LMSettingServiceDep = Annotated[LMSettingService, Depends(get_lm_setting_service
 ContentServiceDep = Annotated[PaperContentService, Depends(get_content_service)]
 SummaryServiceDep = Annotated[PaperSummaryService, Depends(get_summary_service)]
 ChatServiceDep = Annotated[PaperChatService, Depends(get_chat_service)]
-

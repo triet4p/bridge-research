@@ -1,34 +1,59 @@
+"""
+Service for managing paper content processing and analysis.
+
+This module handles:
+1.  Downloading PDF files from ArXiv.
+2.  Parsing PDFs into Markdown using `pymupdf4llm`.
+3.  Analyzing the Markdown structure to build a hierarchical Table of Contents (ToC).
+4.  Persisting analysis results (ToC tree and content map) to the database.
+5.  Managing the lifecycle of analysis data (create, get, delete).
+"""
+
 from datetime import datetime
-import json
-import os
-import pymupdf.layout
-import requests
-import pymupdf4llm
 import re
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple
+import json
+import pymupdf.layout
+import pymupdf4llm
 
 from src.core.config import settings
 from src.core.logger import get_logger
 from src.models.analysis import PaperAnalysis
-from src.repositories.analysis_repository import AnalysisRepository
-from src.repositories.chat_repository import ChatRepository
-from src.services.local_paper_service import LocalPaperService
-from src.dto.analysis_dto import ParsedDocument, TocNode
+from src.repositories.analysis import AnalysisRepository
+from src.repositories.chat import ChatRepository
+from src.services.local_paper import LocalPaperService
+from src.dto.analysis import ParsedDocument, TocNode
 
-logger = get_logger("[PythonSidecar PDFService]")
+_logger = get_logger("[PythonSidecar - Paper Content]")
 
 class PaperContentService:
-    def __init__(self, repo: AnalysisRepository,
+    """
+    Service responsible for the `Indexing` phase of the RAG pipeline.
+    It transforms raw PDF files into structured, queryable data.
+    """
+    
+    def __init__(self, analysis_repo: AnalysisRepository,
                  chat_repo: ChatRepository,
                  local_paper_service: LocalPaperService):
+        """
+        Args:
+            analysis_repo (AnalysisRepository): For storing ToC and content map.
+            chat_repo (ChatRepository): For cleaning up chat history when analysis is deleted.
+            local_paper_service (LocalPaperService): For managing PDF file downloads and metadata.
+        """
         self.storage_dir = settings.PAPER_STORAGE_DIR
-        self.repo = repo
+        self.analysis_repo = analysis_repo
         self.chat_repo = chat_repo
         self.local_paper_service = local_paper_service
         self._init_patterns()
         
     def _init_patterns(self):
-        """Pre-compile all regex patterns once"""
+        """
+        Pre-compile regex patterns for header extraction to improve performance.
+        
+        The patterns are designed to catch various academic paper formatting styles,
+        handling bold text (`**`), numbering (`1.`, `1.2`, `A.1`), and standard keywords.
+        """
         # Numbered patterns with support for:
         # - Pure numbers: 1, 1.2, 1.2.3
         # - Letters: E, E.1, E.2.1
@@ -71,12 +96,28 @@ class PaperContentService:
         self.markdown_pattern = re.compile(r'^#{1,6}\s+(.+)$')
         
     def get_analysis_status(self, paper_id: str) -> bool:
-        """Kiểm tra xem paper này đã được analyze chưa"""
-        return self.repo.get(paper_id) is not None
+        """
+        Checks if a paper has already been analyzed/indexed.
+
+        Args:
+            paper_id (str): The ArXiv ID.
+
+        Returns:
+            bool: True if analysis exists in DB.
+        """
+        return self.analysis_repo.get(paper_id) is not None
     
     def get_parsed_document(self, paper_id: str) -> ParsedDocument | None:
-        """Lấy dữ liệu đã phân tích từ DB"""
-        record = self.repo.get(paper_id)
+        """
+        Retrieves the full analysis result (ToC + Content) from the database.
+
+        Args:
+            paper_id (str): The ArXiv ID.
+
+        Returns:
+            ParsedDocument | None: The DTO containing the tree and content map, or None if not found.
+        """
+        record = self.analysis_repo.get(paper_id)
         if not record:
             return None
         
@@ -91,17 +132,32 @@ class PaperContentService:
 
     def analyze_paper(self, paper_id: str, pdf_url: str) -> ParsedDocument:
         """
-        Thực hiện Indexing: Download -> Parse -> Save DB
+        Executes the full indexing pipeline:
+        1. Check/Download PDF.
+        2. Convert PDF to Markdown.
+        3. Parse Markdown into a hierarchical Tree (ToC).
+        4. Save everything to Database.
+
+        Args:
+            paper_id (str): The ArXiv ID.
+            pdf_url (str): URL to download the PDF if missing.
+
+        Returns:
+            ParsedDocument: The result of the analysis.
+
+        Raises:
+            ValueError: If the paper metadata is not saved in the library first.
         """
-        logger.info(f"🚀 Starting analysis for {paper_id}...")
+        _logger.info(f"🚀 Starting analysis for {paper_id}...")
         
         doc = self.get_parsed_document(paper_id)
         if doc is not None:
-            logger.info(f'Paper already exists')
+            _logger.info(f'Paper already exists')
             return doc
         
         paper = self.local_paper_service.get_paper(paper_id)
         if paper is None:
+            _logger.error(f'Paper {paper_id} is not saved. Please save it.')
             raise ValueError(f'Paper {paper_id} is not saved. Please save it.')
         
         file_path = paper.local_path
@@ -120,9 +176,9 @@ class PaperContentService:
             pdf_local_path=file_path,
             analyzed_at=datetime.now()
         )
-        self.repo.save(analysis_record)
+        self.analysis_repo.save(analysis_record)
         
-        logger.info(f"✅ Analysis saved to DB for {paper_id}")
+        _logger.info(f"✅ Analysis saved to DB for {paper_id}")
         
         return ParsedDocument(
             paper_id=paper_id,
@@ -132,64 +188,90 @@ class PaperContentService:
 
     def delete_analysis(self, paper_id: str) -> bool:
         """
-        Chỉ xóa dữ liệu phân tích (ToC, Chat).
-        KHÔNG xóa PDF, KHÔNG xóa Metadata (để giữ trạng thái Saved trong Library).
-        """
-        logger.info(f"🗑️ Clearing analysis data for {paper_id}...")
+        Clears analysis data to free up space or reset state.
         
-        # 1. Xóa Chat
+        ## Action:
+        - Deletes Chat History.
+        - Deletes Analysis Record (ToC, Content).
+        - DOES NOT delete the PDF file or Paper metadata (keeps it in Library).
+
+        Args:
+            paper_id (str): The ArXiv ID.
+
+        Returns:
+            bool: True if successful.
+        """
+        _logger.info(f"🗑️ Clearing analysis data for {paper_id}...")
+        
+        # 1. Clear chat
         self.chat_repo.delete_history(paper_id)
         
-        # 2. Xóa Analysis Record (ToC)
-        success = self.repo.delete(paper_id)
-        logger.info(f'Delete success')
+        # 2. Clear ToC
+        success = self.analysis_repo.delete(paper_id)
+        _logger.info(f'Delete success')
         return success
     
-    def get_toc(self, paper_id: str) -> Optional[List[TocNode]]:
-        """Chỉ lấy cây ToC từ DB"""
-        record = self.repo.get(paper_id)
+    def get_toc(self, paper_id: str) -> List[TocNode] | None:
+        """
+        Lightweight method to just get the Table of Contents (for UI display).
+        Does not load the full content map.
+        
+        Args:
+            paper_id (str): ID of paper.
+            
+        Returns:
+            (List[TocNode] | None): Return list of ToC Node if found, else None
+        """
+        record = self.analysis_repo.get(paper_id)
         if not record:
             return None
         
         # Convert JSON -> List[TocNode]
-        # Lưu ý: Cần logic đệ quy hoặc Pydantic parse
         try:
-            # Giả sử TocNode là Pydantic model
             return [TocNode(**node) for node in record.toc]
         except Exception as e:
-            logger.error(f"Error parsing ToC JSON: {e}")
+            _logger.error(f"Error parsing ToC JSON: {e}")
             return []
+        
+    # --- HELPER METHODS FOR PARSING ---
 
     def _clean_line(self, line: str) -> str:
-        """Làm sạch noise nhanh"""
+        """Removes common markdown noise characters."""
         return line.strip('_ \t#')
 
     def _is_table_or_noise(self, text: str, line_idx: int, lines: List[str]) -> bool:
         """
-        Check nếu text là table row hoặc noise, không phải header thật.
+        Heuristic check to identify if a line is likely part of a table or noise
+        rather than a valid section header.
+        
+        Logic:
+        - Contains multiple slashes (metrics like 30.5 / 40.2).
+        - Starts with 'w/o' (ablation study rows).
+        - Contains many decimal numbers.
+        - Surrounded by table delimiters (|---|).
         """
-        # Rule 1: Có nhiều dấu / (metrics như 31.41 / 0.831 / 0.101)
+        
+        # Rule 1: Metrics row (e.g., 31.41 / 0.831 / 0.101)
         if text.count('/') >= 2:
             return True
         
-        # Rule 2: Bắt đầu bằng w/o, without, with (ablation rows)
+        # Rule 2: Ablation rows (e.g., "w/o Text Guidance")
         if re.match(r'^[`\']*(w/o|without)\s+', text, re.IGNORECASE):
             return True
         
-        # Rule 3: Chứa >= 3 số decimal (35.72 / 0.879 / 0.066)
+        # Rule 3: Many decimal numbers
         decimal_count = len(re.findall(r'\d+\.\d+', text))
         if decimal_count >= 3:
             return True
         
-        # Rule 4: Title quá ngắn (<= 2 words) và toàn số
+        # Rule 4: Short numeric-only title
         words = text.split()
         if len(words) <= 2:
             if all(re.match(r'^\d+(\.\d+)?$', w) for w in words):
                 return True
         
-        # Rule 5: Check context - nếu dòng trước/sau có dấu | hoặc ---|---
-        # Đây là dấu hiệu của markdown table
-        context_range = 3  # Check 3 dòng trước và sau
+        # Rule 5: Context check for markdown table structure
+        context_range = 3  
         start = max(0, line_idx - context_range)
         end = min(len(lines), line_idx + context_range + 1)
         
@@ -206,15 +288,16 @@ class PaperContentService:
         
         return False
 
-    def _extract_header(self, line: str, line_idx: int, lines: List[str]) -> Optional[dict]:
+    def _extract_header(self, line: str, line_idx: int, lines: List[str]) -> (Dict | None):
         """
-        Extract header từ một dòng với context awareness.
-        Returns: {'number': str, 'title': str, 'type': str} or None
-        """
-        if 'Component Ablation' in line:
-            print(line)
-        line = self._clean_line(line)
+        Analyzes a line to determine if it's a valid section header.
         
+        Returns:
+            dict: {'number': str, 'title': str, 'type': str} if valid.
+            None: If it's regular text or noise.
+        """
+        
+        line = self._clean_line(line)
         
         # Skip empty or noise lines
         if not line or self.noise_pattern.match(line):
@@ -255,7 +338,7 @@ class PaperContentService:
         return None
 
 
-    def _calculate_level(self, number: Optional[str]) -> int:
+    def _calculate_level(self, number: str | None) -> int:
         """
         Calculate level from numbering.
         Examples:
@@ -283,7 +366,10 @@ class PaperContentService:
 
     def _build_toc_tree(self, md_text: str) -> Tuple[List[TocNode], Dict[str, str]]:
         """
-        Build TOC tree from markdown text.
+        Parses the entire markdown text to build a hierarchical Table of Contents.
+        
+        Returns:
+            (Tuple[List[TocNode], Dict[str, str]]): (List of root nodes, Dictionary mapping node_id to content text)
         """
         lines = md_text.split('\n')
         
@@ -292,7 +378,7 @@ class PaperContentService:
         seen_positions = set()  # Track để tránh duplicate
         
         for i, line in enumerate(lines):
-            # Skip nếu đã process
+            # Skip if processed
             if i in seen_positions:
                 continue
             
@@ -315,7 +401,7 @@ class PaperContentService:
                 
                 seen_positions.add(i)
         
-        logger.info(f"📋 Found {len(candidates)} headers")
+        _logger.info(f"📋 Found {len(candidates)} headers")
         
         # PASS 2: Build tree structure
         if not candidates:

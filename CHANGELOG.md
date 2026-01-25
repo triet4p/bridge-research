@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-01-25
+
+### 🚀 Release Note: "The Deep Read Update"
+This major update transforms Bridge Research from a search tool into a **Personal Research Assistant**. It introduces a Local Library, secure AI configuration, and a powerful **Reasoning-based RAG engine** that allows users to chat deeply with full PDF contents without needing heavy vector databases.
+
+### ✨ Added
+- **📚 Local Library & Persistence:**
+    - **Save Papers:** Users can now save papers to a local SQLite database.
+    - **Library View:** A dedicated tab to manage saved papers with "Read/Unread" status.
+    - **Auto-Save:** Automatically saves paper metadata and PDF when starting an analysis.
+- **🤖 Deep Analysis & Chat (RAG):**
+    - **Vectorless Reasoning RAG:** Implemented a novel 2-step reasoning engine (Selector -> Reader) using **DSPy**, eliminating the need for heavy Vector DBs or Embedding models.
+    - **Smart PDF Parsing:** Uses `pymupdf4llm` combined with a custom Heuristic Parser to reconstruct the **Table of Contents (ToC)** tree from raw PDFs.
+    - **Structure Viewer:** Visual ToC sidebar in Chat Modal allows users to see the paper's layout and content previews.
+    - **Context-Aware Chat:** AI understands conversation history and resolves references (e.g., "explain *that* table").
+    - **Rich Markdown Support:** Chat interface now renders **Tables** (GFM) and **LaTeX Formulas** (KaTeX) beautifully.
+- **⚙️ AI Configuration:**
+    - **Secure Storage:** API Keys are now stored in the **OS Keyring** (Windows Credential Manager / MacOS Keychain), not in the database.
+    - **Multi-Provider Support:** Native support for **Google Gemini**, **OpenRouter**, **OpenAI**, and **Ollama** (via OpenAI-compatible mode).
+    - **Dynamic Switch:** Instantly switch between models without restarting the app.
+
+### 🛠 Changed
+- **Backend Architecture:**
+    - Refactored into a Clean Architecture: `API (Router) -> Service -> Repository -> Database`.
+    - Standardized Dependency Injection via `src/api/deps.py`.
+    - **Services:** Split logic into `LocalPaperService` (Library), `PaperContentService` (PDF/Parsing), and `PaperChatService` (RAG).
+- **Frontend Logic:**
+    - **Client-side Search:** Instant filtering for Local Library data.
+    - **Smart Hooks:** Introduced `useAnalyzeWithSave` to handle the complex flow of "Check -> Save -> Download -> Analyze".
+    - **UI Polish:** Prevented elastic overscroll, improved Dark Mode contrast for buttons, and added Skeleton Loaders for smoother UX.
+
+### 🔧 Fixed
+- **Ollama Integration:** Fixed connection issues by standardizing Ollama requests to use the `/v1` (OpenAI-compatible) endpoint.
+- **Timezone Mismatch:** Fixed date discrepancies between ArXiv Search (UTC) and Local Library by enforcing UTC serialization.
+- **Cache Invalidation:** Fixed bugs where UI showed stale data (ToC/History) after deleting a paper by properly removing React Query cache keys.
+- **PDF Parsing:** Improved Regex logic to correctly detect bold numbered headers (e.g., `**1. Introduction**`) and ignore table contents.
+
+---
+
 ## [0.1.1] - 2026-01-19
 
 ### 🚀 Release Note
@@ -31,6 +70,7 @@ This is the first desktop release of Bridge Research, migrating from the legacy 
 - **Python Sidecar:**
     - Replaced client-side XML parsing with a dedicated Python `ArxivService`.
     - Implemented a "Deadman Switch" (Watchdog) to ensure the sidecar terminates when the main app closes.
+    - Integrated `uv` for lightning-fast Python dependency management.
 - **New UI/UX:**
     - Completely rewritten Frontend using **React 19** and **Tailwind CSS**.
     - **Advanced Search:** Smart query builder (e.g., `all:LLM AND cat:cs.AI`) with Date Range and Topic filters.

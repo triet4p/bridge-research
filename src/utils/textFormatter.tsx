@@ -1,13 +1,33 @@
-import { openExternal } from './openLink';
+/**
+ * @fileoverview Utility functions for formatting and rendering text content.
+ * This module provides functions to enhance plain text with interactive elements,
+ * such as clickable links.
+ */
 
-export const formatAbstract = (text: string) => {
+
+import { openExternal } from './openLink';
+import { JSX } from 'react';
+
+/**
+ * Parses a string of text, finds all URLs, and wraps them in clickable `<span>` elements.
+ * 
+ * This function uses a regular expression to detect URLs and styles them differently
+ * based on the domain (e.g., GitHub, Hugging Face). It also handles trailing punctuation
+ * to ensure the correct URL is opened.
+ *
+ * @param {string} text The raw text content (e.g., a paper abstract).
+ * @returns {JSX.Element[] | null} An array of React elements and strings, 
+ *          ready to be rendered, or null if the input text is empty.
+ */
+export const formatAbstract = (text: string): JSX.Element[] | null => {
     if (!text) return null;
 
-    // GIẢI THÍCH REGEX:
-    // https?:\/\/      -> Bắt đầu bằng http:// hoặc https://
-    // [^\s]+           -> Lấy tất cả ký tự không phải khoảng trắng (greedy)
-    // [^.,;)\s]        -> Ký tự CUỐI CÙNG bắt buộc KHÔNG ĐƯỢC là dấu chấm, phẩy, chấm phẩy, đóng ngoặc hoặc khoảng trắng.
-    // Điều này giúp loại bỏ dấu chấm câu ở cuối URL.
+    // Regex Explanation:
+    // https?:\/\/      -> Starts with http:// or https://
+    // [^\s]+           -> Greedily matches all non-whitespace characters
+    // [^.,;)\s]        -> The LAST character MUST NOT be a period, comma, semicolon,
+    //                     closing parenthesis, or whitespace. This prevents including
+    //                     trailing punctuation in the URL.
     const urlRegex = /(https?:\/\/[^\s]+[^.,;)\s])/g;
 
     const parts = text.split(urlRegex);

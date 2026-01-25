@@ -14,21 +14,36 @@ In the rapidly evolving landscape of AI and Data Science, staying updated with A
 
 **Bridge Research App** helps you answer these questions. It is a desktop application designed to search, filter, analyze, and "bridge" the knowledge from papers to practical solutions.
 
-## ✨ Key Features (v0.1.0)
+## ✨ Key Features
 
 *   **🔍 Advanced ArXiv Search:**
     *   Smart query builder (e.g., `all:LLM AND cat:cs.AI`).
     *   Filter by **Date Range** and **Topics** (AI, CV, NLP, etc.).
+    *   Configurable result limits (1-100) for fine-grained control.
+*   **📚 Local Library & Persistence:**
+    *   Save papers to local SQLite database with metadata and PDFs.
+    *   Dedicated Library view to manage saved papers with Read/Unread status.
+    *   Auto-save papers when starting analysis sessions.
+*   **🤖 Deep Analysis & Chat (RAG):**
+    *   **Vectorless Reasoning RAG Engine:** Novel 2-step reasoning using DSPy (Selector → Reader).
+    *   **Smart PDF Parsing:** Automatic Table of Contents (ToC) extraction and reconstruction from PDFs.
+    *   **Structure Viewer:** Interactive ToC sidebar showing paper layout and content previews.
+    *   **Context-Aware Chat:** AI understands conversation history and resolves references.
+    *   **Rich Markdown Support:** Renders tables (GFM) and LaTeX formulas (KaTeX) beautifully.
+*   **⚙️ AI Configuration:**
+    *   **Secure Storage:** API keys stored in OS Keyring (Windows Credential Manager).
+    *   **Multi-Provider Support:** Google Gemini, OpenRouter, OpenAI, Ollama (OpenAI-compatible).
+    *   **Dynamic Model Switching:** Instantly switch between providers without restarting.
 *   **⚡ Hybrid Performance:**
     *   Built with **Tauri v2** (Rust) for a lightweight footprint.
-    *   Powered by a **Python FastAPI Sidecar** for robust data processing.
+    *   Powered by a **Python FastAPI Sidecar** for robust data processing and AI analysis.
 *   **🌐 Native Experience:**
     *   Opens PDFs and Links in your default browser (Chrome/Edge).
     *   Auto-detects GitHub/HuggingFace links in abstracts.
     *   Multi-language support (English / Vietnamese).
 *   **🛡️ Local-First:**
     *   No login required.
-    *   Data processing happens locally (Phase 1).
+    *   All data processing happens locally with no external dependencies.
 
 ## 📥 Installation (For Users)
 
@@ -60,7 +75,7 @@ If you want to contribute or build the app from source, please follow our detail
 ## 🗺️ Roadmap
 
 *   [x] **Phase 1 (v0.1.0):** Foundation, ArXiv Search, Hybrid Architecture.
-*   [ ] **Phase 2:** Local Database (Save papers), Deep Analysis with LLMs (Gemini/Ollama).
+*   [x] **Phase 2 (v0.2.0):** Local Database (Save papers), Deep Analysis with LLMs (Gemini/Ollama).
 *   [ ] **Phase 3:** Github Code Inspector & Feasibility Scoring.
 
 ## 📄 License

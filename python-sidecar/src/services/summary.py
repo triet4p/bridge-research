@@ -1,10 +1,10 @@
 import traceback
 import dspy
 from src.core.logger import get_logger
-from src.dto.analysis_dto import SummaryRequest, SummaryResponse
-from src.services.lm_setting_service import get_active_lm
+from src.dto.analysis import SummaryRequest, SummaryResponse
+from src.services.lm_setting import get_active_lm
 
-logger = get_logger("[PythonSidecar AIService]")
+_logger = get_logger("[PythonSidecar - Summary]")
 
 # --- DSPy Signature (System Prompt & Interface) ---
 class PaperSummarizerSignature(dspy.Signature):
@@ -35,22 +35,41 @@ class PaperSummarizerSignature(dspy.Signature):
     target_language: str = dspy.InputField(desc="The language to generate the summary in (e.g., 'Vietnamese', 'English').")
     summary: str = dspy.OutputField(desc="The structured summary in Markdown format.")
 
-# --- Service Implementation ---
+
 class PaperSummaryService:
+    """
+    Service class responsible for handling paper summarization requests.
+    """
     def __init__(self):
-        # Khởi tạo module DSPy (ChainOfThought giúp AI suy luận từng bước tốt hơn)
+        """
+        Initializes the service and the DSPy ChainOfThought module.
+        ChainOfThought is used to encourage the model to reason before generating the final output.
+        """
         self.summarizer_module = dspy.ChainOfThought(PaperSummarizerSignature)
 
     def generate_summary(self, req: SummaryRequest) -> SummaryResponse:
-        # 1. Check xem đã config LM chưa
-        lm = get_active_lm()
+        """
+        Generates a structured summary for a given paper abstract.
+
+        Args:
+            req (SummaryRequest): The request object containing the abstract text and target language.
+
+        Returns:
+            SummaryResponse: The object containing the generated markdown summary.
+
+        Raises:
+            ValueError: If no active AI provider is configured in settings.
+            Exception: If an error occurs during DSPy execution or network communication.
+        """
         
+        # 1. Check if the Language Model is configured
+        lm = get_active_lm()
         if not lm:
             raise ValueError("AI Provider is not configured or Model is invalid. Please check Settings.")
 
         try:
-            # 2. Gọi DSPy
-            logger.info(f"Generating summary in {req.language} using {lm.model}...")
+            # 2. Execute the DSPy module
+            _logger.info(f"Generating summary in {req.language} using {lm.model}...")
             
             with dspy.context(lm=lm):
                 prediction = self.summarizer_module(
@@ -58,12 +77,12 @@ class PaperSummaryService:
                     target_language=req.language
                 )
                 
-            logger.info(f'Response of {lm.model}: {prediction.summary}')
+            _logger.info(f'Response of {lm.model}: {prediction.summary}')
             
-            # 3. Trả về kết quả
+            # 3. Return the result
             return SummaryResponse(summary=prediction.summary)
             
         except Exception as e:
-            logger.error(f"❌ AI Error: {str(e)}")
-            logger.error(f"🔍 Traceback:\n{traceback.format_exc()}")
+            _logger.error(f"❌ AI Error: {str(e)}")
+            _logger.error(f"🔍 Traceback:\n{traceback.format_exc()}")
             raise e

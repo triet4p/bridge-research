@@ -3,6 +3,10 @@ import time
 
 router = APIRouter()
 
+@router.get('/')
+def hello():
+    return {"status": "alive", "message": "Hello world"}
+
 @router.get("/health")
 def health_check():
     """

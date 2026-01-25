@@ -1,20 +1,36 @@
-# python-sidecar/src/services/arxiv_service.py
-import requests
+"""
+Service for interacting with the ArXiv API.
+
+This module handles:
+- Constructing complex query strings (keyword, category, date range).
+- Fetching Atom/XML feeds from ArXiv.
+- Parsing XML responses into structured PaperResponse objects.
+- Checking against the local repository to mark papers as 'saved'.
+"""
+
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import List, Set
+import requests
 
 from src.core.constants import ARXIV_API_URL, ARXIV_XML_NAMESPACE
 from src.core.logger import get_logger
-from src.dto.paper_dto import PaperResponse
-from src.models.paper import PaperReadStatus
-from src.repositories.paper_repository import PaperRepository
+from src.dto.local_paper import LocalPaperResponse
+from src.models.local_paper import PaperReadStatus
+from src.repositories.local_paper import LocalPaperRepository
 
 _logger = get_logger('[PythonSidecar - ArXiv]')
 
 class ArxivService:
-    def __init__(self, repo: PaperRepository):
-        self.repo = repo
+    """
+    Service class to search and fetch metadata from ArXiv.
+    """
+    def __init__(self, local_paper_repo: LocalPaperRepository):
+        """
+        Args:
+            local_paper_repo (LocalPaperRepository): Repository to check for existing saved papers.
+        """
+        self.local_paper_repo = local_paper_repo
     
     def search_papers(
         self, 
@@ -23,10 +39,22 @@ class ArxivService:
         max_results: int = 20,
         start_date: str = None, 
         end_date: str = None
-    ) -> List[PaperResponse]:
+    ) -> List[LocalPaperResponse]:
+        """
+        Searches for papers on ArXiv based on multiple criteria.
+
+        Args:
+            query (str): Keyword search (title, abstract, authors).
+            categories (List[str] | None): List of ArXiv categories (e.g., ['cs.AI', 'cs.CV']).
+            max_results (int): Maximum number of results to return.
+            start_date (str): Filter by submission date (YYYY-MM-DD).
+            end_date (str): Filter by submission date (YYYY-MM-DD).
+
+        Returns:
+            List[LocalPaperResponse]: A list of paper DTOs, with local status (is_saved) populated.
+        """
         
-        # Lấy danh sách ID đã lưu -> Chuyển thành SET để tra cứu nhanh O(1)
-        save_ids = set(self.repo.get_all_ids())
+        save_ids = set(self.local_paper_repo.get_all_ids())
         
         search_query = self._format_query(query, categories, start_date, end_date)
 
@@ -38,20 +66,16 @@ class ArxivService:
             "sortOrder": "descending"
         }
 
-        # --- DEBUG: In ra URL thực tế ---
         req = requests.Request('GET', ARXIV_API_URL, params=params)
         prepared = req.prepare()
-        _logger.info(f"🔗 Target URL: {prepared.url}")
 
         try:
             response = requests.Session().send(prepared, timeout=20)
             response.raise_for_status()
             
-            # --- DEBUG: Check Raw Content ---
             content = response.content
             _logger.info(f"📥 Received {len(content)} bytes")
             
-            # --- FIX: Truyền save_ids vào hàm parse ---
             return self._parse_xml(content, save_ids)
             
         except Exception as e:
@@ -60,9 +84,14 @@ class ArxivService:
         
     def _format_query(self, query: str, categories: List[str] | None, 
                       start_date: str, end_date: str) -> str:
+        """
+        Constructs the ArXiv API query string according to their query syntax.
+        
+        Format: `(all:keyword AND (cat:cs.AI OR cat:cs.CV) AND submittedDate:[...])`
+        """
         query_parts = []
         
-        # 1. Xử lý Keyword
+        # 1. Keyword
         if query and query.strip():
             clean_kw = query.strip().replace("+", " ")
             if "cat:" not in clean_kw and "all:" not in clean_kw:
@@ -70,16 +99,15 @@ class ArxivService:
             else:
                  query_parts.append(clean_kw)
 
-        # 2. Xử lý Categories
+        # 2. Categories
         if categories and len(categories) > 0:
             cat_parts = [f"cat:{c}" for c in categories]
             query_parts.append(f"({' OR '.join(cat_parts)})")
-
-        # Mặc định
+        # Default
         if not query_parts:
             query_parts.append("cat:cs.AI")
 
-        # 3. Tổng hợp
+        # 3. Aggreration
         search_query = " AND ".join(query_parts)
 
         # 4. Filter Date
@@ -90,23 +118,23 @@ class ArxivService:
             
         return search_query
 
-    def _parse_xml(self, xml_content: bytes, save_ids: Set[str]) -> List[PaperResponse]:
+    def _parse_xml(self, xml_content: bytes, save_ids: Set[str]) -> List[LocalPaperResponse]:
+        """
+        Parses the raw Atom XML response from ArXiv into PaperResponse objects.
+        """
         try:
             root = ET.fromstring(xml_content)
             papers = []
             entries = root.findall('atom:entry', ARXIV_XML_NAMESPACE)
-            
-            _logger.info(f"🧩 Found {len(entries)} entries in XML")
 
             for entry in entries:
                 try:
                     id_url = entry.find('atom:id', ARXIV_XML_NAMESPACE).text
                     p_id = id_url.split('/abs/')[-1].split('v')[0]
                     
-                    # Check trạng thái đã lưu
                     is_saved = p_id in save_ids
                     if is_saved:
-                        local_path = self.repo.get_by_id(p_id).local_path
+                        local_path = self.local_paper_repo.get_by_id(p_id).local_path
                     else:
                         local_path = None
 
@@ -129,7 +157,7 @@ class ArxivService:
                     cat_tag = entry.find('arxiv:primary_category', ARXIV_XML_NAMESPACE)
                     category = cat_tag.attrib.get('term') if cat_tag is not None else "cs.AI"
 
-                    papers.append(PaperResponse(
+                    papers.append(LocalPaperResponse(
                         paper_id=p_id,
                         title=title,
                         summary=summary,

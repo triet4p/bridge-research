@@ -28,7 +28,7 @@ pub fn run() {
                             eprintln!("[PY ERR]: {}", text.trim());
                         }
                         _ => {
-                            // Các event khác như Terminated, Error...
+                            // Other event
                         }
                     }
                 }
