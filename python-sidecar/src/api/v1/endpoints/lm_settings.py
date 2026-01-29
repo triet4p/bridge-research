@@ -13,7 +13,7 @@ def get_settings(service: LMSettingServiceDep):
     return service.get_settings()
 
 @router.put("/", response_model=LMSettingResponse)
-def update_settings(dto: LMSettingUpdate, service: LMSettingServiceDep):
+async def update_settings(dto: LMSettingUpdate, service: LMSettingServiceDep):
     """
     Updates the AI configuration.
 
@@ -27,4 +27,4 @@ def update_settings(dto: LMSettingUpdate, service: LMSettingServiceDep):
         After updating, the system automatically reconfigures the global DSPy client
         to use the new settings immediately.
     """
-    return service.update_settings(dto)
+    return await service.update_settings(dto)

@@ -1,7 +1,8 @@
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List
+from src.models.lm_setting import LMTask
 
-# Dùng để trả về cho Frontend
+
 class LMSettingResponse(BaseModel):
     """
     DTO for returning current AI configuration to the Frontend.
@@ -27,8 +28,14 @@ class LMSettingResponse(BaseModel):
     """
     Map indicating if an API key exists for each provider (True/False). Used for UI feedback (e.g., showing 'Saved').
     """
+    task_routing: Dict[LMTask, str] = Field(
+        ...,
+        description="Mapping of Task -> ProviderID"
+    )
+    """ 
+    Mapping of Task -> ProviderID
+    """
 
-# Dùng để nhận dữ liệu Update từ Frontend
 class LMSettingUpdate(BaseModel):
     """
     DTO for updating AI configuration from the Frontend.
@@ -58,4 +65,11 @@ class LMSettingUpdate(BaseModel):
     )
     """
     List of provider IDs whose API keys should be removed from the Keyring.
+    """
+    task_routing_update: Dict[LMTask, str] | None = Field(
+        default=None,
+        description="Update Mapping of Task -> ProviderID."
+    )
+    """ 
+    Mapping of Task -> ProviderID.
     """

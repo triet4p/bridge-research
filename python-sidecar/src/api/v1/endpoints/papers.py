@@ -73,13 +73,14 @@ def delete_paper(paper_id: str, service: LocalPaperServiceDep):
     return {"status": "deleted", "paper_id": paper_id}
 
 @router.post("/summary", response_model=SummaryResponse)
-def generate_summary(req: SummaryRequest, service: SummaryServiceDep):
+async def generate_summary(req: SummaryRequest, service: SummaryServiceDep):
     """
     Generates a structured summary using the configured LLM.
     Does not require the PDF to be downloaded (uses the Abstract).
     """
     try:
-        return service.generate_summary(req)
+        res = await service.generate_summary(req)
+        return res
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
@@ -133,7 +134,7 @@ def get_paper_toc(paper_id: str, service: ContentServiceDep):
     return toc
 
 @router.post("/chat", response_model=ChatResponse)
-def chat_with_paper(req: ChatRequest, service: ChatServiceDep):
+async def chat_with_paper(req: ChatRequest, service: ChatServiceDep):
     """
     Performs Reasoning-based RAG:
     1. Selects relevant sections based on ToC + Question.
@@ -142,7 +143,8 @@ def chat_with_paper(req: ChatRequest, service: ChatServiceDep):
     4. Saves conversation to history.
     """
     try:
-        return service.chat(req)
+        res = await service.chat(req)
+        return res
     except ValueError as ve:
         if str(ve) == "PAPER_NOT_ANALYZED":
             raise HTTPException(status_code=400, detail="PAPER_NOT_ANALYZED")

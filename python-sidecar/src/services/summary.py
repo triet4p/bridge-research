@@ -2,7 +2,8 @@ import traceback
 import dspy
 from src.core.logger import get_logger
 from src.dto.analysis import SummaryRequest, SummaryResponse
-from src.services.lm_setting import get_active_lm
+from src.services.lm_setting import get_lm_for_task
+from src.models.lm_setting import LMTask
 
 _logger = get_logger("[PythonSidecar - Summary]")
 
@@ -47,7 +48,7 @@ class PaperSummaryService:
         """
         self.summarizer_module = dspy.ChainOfThought(PaperSummarizerSignature)
 
-    def generate_summary(self, req: SummaryRequest) -> SummaryResponse:
+    async def generate_summary(self, req: SummaryRequest) -> SummaryResponse:
         """
         Generates a structured summary for a given paper abstract.
 
@@ -63,9 +64,9 @@ class PaperSummaryService:
         """
         
         # 1. Check if the Language Model is configured
-        lm = get_active_lm()
+        lm = await get_lm_for_task(LMTask.SUMMARY)
         if not lm:
-            raise ValueError("AI Provider is not configured or Model is invalid. Please check Settings.")
+            raise ValueError("AI Provider is not configured for SUMMARY task.")
 
         try:
             # 2. Execute the DSPy module

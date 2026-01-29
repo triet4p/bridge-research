@@ -140,6 +140,14 @@ export interface ChatResponse {
 
 // --- SETTINGS ---
 
+export enum LMTask {
+    DEFAULT = "default",
+    SUMMARY = "summary",
+    CHAT = "chat",
+    TREND = "trend",
+    CODE = "code"
+}
+
 /**
  * DTO for retrieving the current AI configuration.
  */
@@ -150,6 +158,8 @@ export interface LMSettingResponse {
     provider_configs: Record<string, Record<string, any>>;
     /** A map indicating whether an API key is saved for each provider. */
     keys_status: Record<string, boolean>;
+
+    task_routing: Record<LMTask, string>;
 }
 
 /**
@@ -164,4 +174,6 @@ export interface LMSettingUpdate {
     api_key_update?: Record<string, string>;
     /** A list of provider IDs whose keys should be deleted. */
     keys_to_delete?: string[];
+
+    task_routing_update?: Record<string, string>;
 }

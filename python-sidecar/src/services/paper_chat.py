@@ -20,7 +20,8 @@ from src.core.logger import get_logger
 from src.repositories.chat import ChatRepository
 from src.dto.analysis import ChatMessage, ChatRequest, ChatResponse, TocNode
 from src.services.paper_content import PaperContentService
-from src.services.lm_setting import get_active_lm
+from src.services.lm_setting import get_lm_for_task
+from src.models.lm_setting import LMTask
 
 _logger = get_logger("[PythonSidecar - Paper Chat]")
 
@@ -96,7 +97,7 @@ class PaperChatService:
         # Tokenizer for logging context usage (using OpenAI's cl100k_base as a standard reference)
         self.token_encoding = tiktoken.get_encoding('cl100k_base')
 
-    def chat(self, req: ChatRequest) -> ChatResponse:
+    async def chat(self, req: ChatRequest) -> ChatResponse:
         """
         Processes a user question through the RAG pipeline.
 
@@ -111,9 +112,9 @@ class PaperChatService:
         """
         
         # 1. Ensure LM is configured
-        lm = get_active_lm()
+        lm = await get_lm_for_task(LMTask.CHAT)
         if not lm:
-            raise ValueError("AI Provider not configured.")
+            raise ValueError("AI Provider not configured for CHAT task.")
 
         # 2. Retrieve parsed document (ToC & Content)
         # This accesses the cache in the 'paper_analysis' table

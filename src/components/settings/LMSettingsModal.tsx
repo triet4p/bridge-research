@@ -1,9 +1,9 @@
 // src/components/settings/LMSettingsModal.tsx
 import React, { useEffect, useState, useRef } from 'react';
-import { X, Save, Check, Key, Server, Cpu, Loader2 } from 'lucide-react';
+import { X, Save, Check, Key, Server, Cpu, Loader2, BrainCircuit, Info } from 'lucide-react';
 import { useAppStore } from '../../stores/useAppStore';
 import { useLMSettings } from '../../hooks/useLMSettings';
-import { LMSettingUpdate } from '../../types/api';
+import { LMSettingUpdate, LMTask } from '../../types/api';
 
 /**
  * Configuration object for available AI/LM provider options.
@@ -18,6 +18,101 @@ const PROVIDERS = [
     { id: 'ollama', label: 'Ollama (Local)', icon: Server, needsKey: false },
     { id: 'openai', label: 'OpenAI', icon: Cpu, needsKey: true },
 ];
+
+/**
+ * Task Specific Routing Section
+ * Allows users to assign specific models to specific tasks.
+ * Logic: Only providers with a saved API key and a configured model name are selectable.
+ */
+const TaskRoutingSection = () => {
+    const { data: settings, updateMutation } = useLMSettings();
+    const { language } = useAppStore();
+
+    if (!settings) return null;
+
+    /**
+     * Filter providers that are actually ready to be used.
+     * A provider is ready if:
+     * 1. It has a saved key (or is Ollama).
+     * 2. It has a model name configured in provider_configs.
+     */
+    const readyProviders = PROVIDERS.filter(p => {
+        const hasKey = settings.keys_status[p.id];
+        const hasModel = !!settings.provider_configs[p.id]?.model;
+        return hasKey && hasModel;
+    });
+
+    const TASK_LABELS: Record<LMTask, string> = {
+        [LMTask.DEFAULT]: language === 'vi' ? "Mặc định hệ thống" : "Global Default",
+        [LMTask.SUMMARY]: language === 'vi' ? "Tóm tắt nhanh" : "Quick Summary",
+        [LMTask.CHAT]: language === 'vi' ? "Chat nghiên cứu sâu" : "Deep Research Chat",
+        [LMTask.TREND]: language === 'vi' ? "Phân tích xu hướng" : "Trend Radar Analysis",
+        [LMTask.CODE]: language === 'vi' ? "Phân tích mã nguồn" : "Code Inspector",
+    };
+
+    return (
+        <div className="mt-8 pt-6 border-t border-gray-100 dark:border-slate-800 animate-in fade-in slide-in-from-bottom-2">
+            <div className="flex items-center justify-between mb-4">
+                <h4 className="text-sm font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                    <BrainCircuit size={16} className="text-purple-500" /> 
+                    {language === 'vi' ? "Điều hướng Model chuyên biệt" : "Task Specific Routing"}
+                </h4>
+                
+                {/* Visual cue if no providers are ready */}
+                {readyProviders.length === 0 && (
+                    <div className="flex items-center gap-1 text-[10px] text-amber-600 bg-amber-50 dark:bg-amber-900/20 px-2 py-1 rounded border border-amber-100 dark:border-amber-900/30">
+                        <Info size={12} />
+                        {language === 'vi' ? "Cần cấu hình Model/Key trước" : "Configure Model/Key first"}
+                    </div>
+                )}
+            </div>
+
+            <div className="grid grid-cols-1 gap-3">
+                {Object.values(LMTask).map((taskId) => (
+                    <div 
+                        key={taskId} 
+                        className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-800/50 rounded-xl border border-gray-100 dark:border-slate-800 hover:border-gray-200 dark:hover:border-slate-700 transition-all"
+                    >
+                        <div className="flex flex-col">
+                            <span className="text-xs font-bold text-gray-700 dark:text-gray-200">
+                                {TASK_LABELS[taskId]}
+                            </span>
+                            <span className="text-[10px] text-gray-400">ID: {taskId}</span>
+                        </div>
+
+                        <select 
+                            value={settings.task_routing[taskId] || ""}
+                            onChange={(e) => {
+                                updateMutation.mutate({
+                                    task_routing_update: { [taskId]: e.target.value }
+                                });
+                            }}
+                            className="text-xs font-medium bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-1.5 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {/* Option to inherit from active_provider */}
+                            <option value="">
+                                {language === 'vi' ? "-- Dùng mặc định --" : "-- Use Default --"}
+                            </option>
+                            
+                            {/* Only show providers that are actually configured */}
+                            {readyProviders.map(p => (
+                                <option key={p.id} value={p.id}>
+                                    {p.label} ({settings.provider_configs[p.id]?.model})
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                ))}
+            </div>
+            
+            <p className="mt-4 text-[10px] text-gray-400 italic">
+                * {language === 'vi' 
+                    ? "Chỉ các Provider đã lưu Key và nhập tên Model mới xuất hiện trong danh sách." 
+                    : "Only providers with saved keys and model names will appear in this list."}
+            </p>
+        </div>
+    );
+};
 
 /**
  * Modal component for managing Language Model (LM) settings and provider configurations.
@@ -149,7 +244,7 @@ export const LMSettingsModal: React.FC = () => {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl border border-gray-200 dark:border-slate-800 flex flex-col overflow-hidden">
+            <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl border border-gray-200 dark:border-slate-800 flex flex-col max-h-[90vh] overflow-hidden">
                 
                 {/* Header */}
                 <div className="p-6 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-gray-50 dark:bg-slate-950">
@@ -162,7 +257,7 @@ export const LMSettingsModal: React.FC = () => {
                 </div>
 
                 {/* Body */}
-                <div className="p-6 flex-1 overflow-y-auto">
+                <div className="p-6 flex-1 overflow-y-auto custom-scrollbar">
                     {isLoading ? (
                         <div className="flex flex-col items-center justify-center py-10 text-gray-500">
                             <Loader2 className="animate-spin mb-2 text-blue-500" />
@@ -288,6 +383,8 @@ export const LMSettingsModal: React.FC = () => {
                                         {isSystemActive ? "Update Configuration" : "Save & Activate"}
                                     </button>
                                 </div>
+
+                                <TaskRoutingSection /> 
                             </div>
                         </div>
                     )}

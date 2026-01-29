@@ -8,9 +8,11 @@ This module handles:
 4.  Managing the global singleton instance of the active Language Model.
 """
 
+import asyncio
 import os
+from typing import Dict
 import dspy
-from src.models.lm_setting import LMSetting
+from src.models.lm_setting import LMSetting, LMTask
 from src.dto.lm_setting import LMSettingResponse, LMSettingUpdate
 from src.repositories.lm_setting import LMSettingRepository
 from src.core.security import KeyringManager
@@ -44,10 +46,14 @@ DEFAULT PROVIDER CONFIGURATIONS
 - This allows the system to support new providers by simply updating this dictionary.
 """
 
-_ACTIVE_LM = None
+_LM_POOL: Dict[LMTask, dspy.LM] = {}
 """ 
-Global variable to hold the active DSPy Language Model instance.
-This instance is shared across the application (e.g., used by ChatService).
+Global Pool to cache LM instances for different tasks
+"""
+
+_AI_READY_EVENT = asyncio.Event()
+""" 
+Event to track if initialization is complete
 """
 
 class LMSettingService:
@@ -61,14 +67,6 @@ class LMSettingService:
             lm_setting_repo (LMSettingRepository): Repository for accessing settings in SQLite.
         """
         self.lm_setting_repo = lm_setting_repo
-        self._ensure_init()
-
-    def _ensure_init(self):
-        setting = self.lm_setting_repo.get()
-        if not setting:
-            # Init default if not exists
-            new_setting = LMSetting(id=1, active_provider="", provider_configs_json=r"{}")
-            self.lm_setting_repo.create(new_setting)
 
     def get_settings(self) -> LMSettingResponse:
         """
@@ -78,31 +76,24 @@ class LMSettingService:
             LMSettingResponse: DTO containing public config and key existence status.
             API keys are NEVER returned in plain text.
         """
-        
         db_setting = self.lm_setting_repo.get()
-        
-        # Fallback
-        if not db_setting: 
-            self._ensure_init()
-            db_setting = self.lm_setting_repo.get()
+        if not db_setting:
+            db_setting = self.lm_setting_repo.create(LMSetting(id=1))
 
         configs = db_setting.provider_configs
-        
-        # Check Keyring status
-        keys_status = {}
-        for provider in configs.keys():
-            if provider == 'ollama':
-                keys_status[provider] = True
-            else:
-                keys_status[provider] = bool(KeyringManager.get_api_key(provider))
+        keys_status = {
+            p: (True if p == 'ollama' else bool(KeyringManager.get_api_key(p)))
+            for p in configs.keys()
+        }
 
         return LMSettingResponse(
             active_provider=db_setting.active_provider,
             provider_configs=configs,
+            task_routing=db_setting.task_routing,
             keys_status=keys_status
         )
 
-    def update_settings(self, dto: LMSettingUpdate) -> LMSettingResponse:
+    async def update_settings(self, dto: LMSettingUpdate) -> LMSettingResponse:
         """
         Updates AI configurations and API Keys.
 
@@ -115,100 +106,127 @@ class LMSettingService:
         
         db_setting = self.lm_setting_repo.get()
         
-        # 1. Logic Update Active Provider
+        # 1. Update Active Provider
         if dto.active_provider is not None:
             db_setting.active_provider = dto.active_provider
 
-        # 2. Logic Update Configs (Merge)
+        # 2. Update Provider Configs (Model names, Base URLs)
         if dto.config_update:
             current_configs = db_setting.provider_configs
             for provider, conf in dto.config_update.items():
-                if provider not in current_configs:
-                    current_configs[provider] = {}
+                if provider not in current_configs: current_configs[provider] = {}
                 current_configs[provider].update(conf)
             db_setting.provider_configs = current_configs
+            
+        # 3. Update Task Routing
+        if dto.task_routing_update:
+            current_routing = db_setting.task_routing
+            current_routing.update(dto.task_routing_update)
+            db_setting.task_routing = current_routing
 
-        # 3. Logic Keyring
+        # 4. Handle API Keys
         if dto.api_key_update:
             for provider, key in dto.api_key_update.items():
-                if key and key.strip():
-                    KeyringManager.set_api_key(provider, key)
-                    os.environ[f"{provider.upper()}_API_KEY"] = key
+                if key.strip(): KeyringManager.set_api_key(provider, key.strip())
 
         if dto.keys_to_delete:
-            for provider in dto.keys_to_delete:
-                KeyringManager.delete_api_key(provider)
+            for p in dto.keys_to_delete: KeyringManager.delete_api_key(p)
 
-        # Lưu xuống DB qua Repo
         self.lm_setting_repo.update(db_setting)
         
-        # Reload AI
-        self.configure_dspy()
+        # Re-configure the AI Pool (can be done in background)
+        asyncio.create_task(self.configure_all_tasks())
         
         return self.get_settings()
-
-    def configure_dspy(self):
+    
+    async def configure_all_tasks(self):
         """
-        Configures the global `dspy.LM` instance based on the active provider.
-        
-        This method:
-        1. Reads the active provider from DB.
-        2. Retrieves the API Key from Keyring.
-        3. Determines the correct LiteLLM prefix and Base URL.
-        4. Instantiates `dspy.LM` and assigns it to `_ACTIVE_LM`.
+        Initializes LM instances for all tasks based on routing settings.
+        This is a non-blocking operation.
         """
-        global _ACTIVE_LM
+        global _LM_POOL, _AI_READY_EVENT
+        _AI_READY_EVENT.clear()
         
         db_setting = self.lm_setting_repo.get()
-        if not db_setting: 
-            return
+        if not db_setting: return
 
-        provider = db_setting.active_provider
-        if not provider: 
-            return
+        routing = db_setting.task_routing
+        configs = db_setting.provider_configs
 
-        user_config = db_setting.provider_configs.get(provider, {})
-        model_name = user_config.get("model", "").strip()
-        
-        if not model_name:
-            _logger.warning(f"⚠️ Model name missing for provider {provider}")
-            return
+        # 1. Khởi tạo instance cho LMTask.DEFAULT (Dựa trên active_provider toàn cục)
+        if db_setting.active_provider:
+            default_instance = self._init_lm_instance(db_setting.active_provider, configs)
+            if default_instance:
+                _LM_POOL[LMTask.DEFAULT] = default_instance
+                _logger.info(f"🌐 Global Default AI set to: {db_setting.active_provider}")
 
-        defaults = PROVIDER_DEFAULTS.get(provider, {})
-        prefix = defaults.get("prefix", provider)
-        full_model = f"{prefix}/{model_name}"
-        api_base = user_config.get("base_url") or defaults.get("default_base_url")
+        # 2. Khởi tạo instance cho các Task chuyên biệt
+        for task in [t for t in LMTask if t != LMTask.DEFAULT]:
+            provider_id = routing.get(task)
+            
+            if provider_id: # Nếu người dùng có chọn cụ thể (không phải "")
+                instance = self._init_lm_instance(provider_id, configs)
+                if instance:
+                    _LM_POOL[task] = instance
+                    _logger.info(f"🎯 Task '{task}' specifically routed to: {provider_id}")
+                else:
+                    # Nếu gán mà init lỗi, xóa khỏi pool để tí nữa fallback về DEFAULT
+                    _LM_POOL.pop(task, None)
+            else:
+                # Nếu giá trị là "" (Use Default), xóa khỏi pool để dùng chung DEFAULT
+                _LM_POOL.pop(task, None)
+
+        _AI_READY_EVENT.set()
+        _logger.info("🚀 AI Routing Pool is synchronized.")
         
-        if provider != 'ollama':
-            api_key = KeyringManager.get_api_key(provider)
-            max_tokens = 16000
-        else:
-            api_key = 'dummy_key_for_ollama'
-            max_tokens = 32000
-        
-        if not api_key:
-            _logger.warning(f"⚠️ Missing API Key for {provider}")
+    
+    def _init_lm_instance(self, provider_id: str, configs: Dict) -> dspy.LM | None:
+        """Internal helper to create a dspy.LM instance."""
+        user_conf = configs.get(provider_id, {})
+        model_name = user_conf.get("model", "").strip()
+        if not model_name: return None
+
+        defaults = PROVIDER_DEFAULTS.get(provider_id, {})
+        full_model = f"{defaults.get('prefix', provider_id)}/{model_name}"
+        api_base = user_conf.get("base_url") or defaults.get("default_base_url")
+        api_key = "dummy" if provider_id == "ollama" else KeyringManager.get_api_key(provider_id)
 
         try:
-            lm_kwargs = {}
-            if api_key: lm_kwargs["api_key"] = api_key
-            if api_base: lm_kwargs["api_base"] = api_base
-            
-            new_lm = dspy.LM(full_model, max_tokens=max_tokens, temperature=0.7, **lm_kwargs)
-            
-            _ACTIVE_LM = new_lm
-            
-            _logger.info(f"✅ DSPy Active LM Updated: {provider}/{model_name}")
-            
+            return dspy.LM(
+                full_model, 
+                api_key=api_key, 
+                api_base=api_base, 
+                max_tokens=32000 if provider_id != 'ollama' else 16000,
+                cache=False # Disable dspy cache to ensure fresh research results
+            )
         except Exception as e:
-            _logger.error(f"❌ DSPy Config Error for {provider}/{model_name}: {e}")
+            _logger.error(f"Failed to init LM for {provider_id}: {e}")
+            return None
 
-def get_active_lm() -> (dspy.LM | None):
+
+async def get_lm_for_task(task: LMTask = LMTask.DEFAULT) -> dspy.LM | None:
     """
-    Retrieves the currently active Language Model instance.
+    Retrieves the LM instance designated for a specific task.
+    Waits for initialization if necessary.
     
+    Args:
+        task (LMTask): Task want to assign LM Model. Defaults to `LMTask.DEFAULT`.
+        
     Returns:
-        (dspy.LM | None): The active LM object, or None if not configured.
+        (dspy.LM | None): Return LM instance designated for this task, or None if task not exists.
     """
-    global _ACTIVE_LM
-    return _ACTIVE_LM
+    try:
+        # Chờ tối đa 10s cho quá trình background init
+        await asyncio.wait_for(_AI_READY_EVENT.wait(), timeout=10.0)
+        
+        # 1. Thử lấy model riêng cho task
+        lm = _LM_POOL.get(task)
+        
+        # 2. Nếu không có (hoặc task là DEFAULT), thử lấy model DEFAULT toàn cục
+        if not lm:
+            lm = _LM_POOL.get(LMTask.DEFAULT)
+            
+        return lm
+    except asyncio.TimeoutError:
+        _logger.error(f"Timeout waiting for AI Pool while requesting task: {task}")
+        return _LM_POOL.get(LMTask.DEFAULT)
