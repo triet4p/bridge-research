@@ -8,6 +8,10 @@ class TrendAnalysisResponse(BaseModel):
     paper_count: int
     domain_distribution: Dict[str, int]
     top_techniques: Dict[str, int]
+    # Reference map by domain: { "Domain_Name": [{"id": "...", "title": "..."}, ...] }
+    domain_references: Dict[str, List[Dict[str, str]]]
+    # Reference map by technique: { "Technique": [{"id": "...", "title": "..."}, ...] }
+    technique_references: Dict[str, List[Dict[str, str]]]
     report_markdown: str
     created_at: datetime
 

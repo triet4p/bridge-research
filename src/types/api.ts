@@ -178,12 +178,19 @@ export interface LMSettingUpdate {
     task_routing_update?: Record<string, string>;
 }
 
+export interface TrendPaperReference {
+    id: string;
+    title: string;
+}
+
 export interface TrendAnalysis {
     id: number;
     time_window_days: number;
     paper_count: number;
     domain_distribution: Record<string, number>;
     top_techniques: Record<string, number>;
+    domain_references: Record<string, TrendPaperReference[]>;
+    technique_references: Record<string, TrendPaperReference[]>;
     report_markdown: string;
     created_at: string;
 }
