@@ -19,6 +19,10 @@ import "./index.css"; // Global styles including Tailwind CSS utility classes
 // Provides caching, synchronization, and server state management for API calls
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
+import { attachConsole } from "@tauri-apps/plugin-log";
+
+// Chạy ngay khi app khởi động để bắt log từ backend (Rust/Python)
+attachConsole().catch(console.error);
 
 /**
  * Render the application into the DOM

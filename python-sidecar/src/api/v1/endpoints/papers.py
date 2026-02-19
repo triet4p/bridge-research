@@ -15,7 +15,7 @@ from src.api.deps import (
 router = APIRouter()
 
 @router.get("/search", response_model=List[LocalPaperResponse])
-def search_papers(
+async def search_papers(
     service: ArxivServiceDep, # <-- Tự động inject ArxivService (đã có repo bên trong)
     query: str | None = Query(None),
     categories: List[str] = Query(default=[]),
@@ -42,7 +42,7 @@ def search_papers(
 
 
 @router.get("/library", response_model=List[LocalPaperResponse])
-def get_library(service: LocalPaperServiceDep):
+async def get_library(service: LocalPaperServiceDep):
     """
     Retrieves all papers saved in the local library.
     Sorted by publication date (newest first).
@@ -50,14 +50,14 @@ def get_library(service: LocalPaperServiceDep):
     return service.get_library()
 
 @router.post("/save", response_model=LocalPaperResponse)
-def save_paper(paper: LocalPaperResponse, service: LocalPaperServiceDep):
+async def save_paper(paper: LocalPaperResponse, service: LocalPaperServiceDep):
     """
     Saves a paper's (include metadata, pdf) to the local database.
     """
     return service.save_paper(paper)
 
 @router.delete("/{paper_id}")
-def delete_paper(paper_id: str, service: LocalPaperServiceDep):
+async def delete_paper(paper_id: str, service: LocalPaperServiceDep):
     """
     Hard delete: Removes the paper from the library.
     
@@ -87,7 +87,7 @@ async def generate_summary(req: SummaryRequest, service: SummaryServiceDep):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{paper_id}/analysis-status")
-def check_analysis_status(paper_id: str, service: ContentServiceDep):
+async def check_analysis_status(paper_id: str, service: ContentServiceDep):
     """
     Checks if the paper has been parsed and indexed (ToC exists).
     Used by UI to decide whether to show 'Start Analysis' or 'Chat'.
@@ -96,7 +96,7 @@ def check_analysis_status(paper_id: str, service: ContentServiceDep):
     return {"paper_id": paper_id, "is_analyzed": is_analyzed}
 
 @router.post("/{paper_id}/analyze", response_model=ParsedDocument)
-def analyze_paper(
+async def analyze_paper(
     paper_id: str, 
     pdf_url: str, 
     service: ContentServiceDep
@@ -114,7 +114,7 @@ def analyze_paper(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/{paper_id}/analysis")
-def delete_analysis(paper_id: str, service: ContentServiceDep):
+async def delete_analysis(paper_id: str, service: ContentServiceDep):
     """
     Clears cached analysis data (ToC, Chat History).
     Does NOT remove the paper from the Library (metadata and PDF remain).
@@ -123,7 +123,7 @@ def delete_analysis(paper_id: str, service: ContentServiceDep):
     return {"status": "deleted" if success else "not_found"}
 
 @router.get("/{paper_id}/toc", response_model=List[TocNode])
-def get_paper_toc(paper_id: str, service: ContentServiceDep):
+async def get_paper_toc(paper_id: str, service: ContentServiceDep):
     """
     Retrieves the cached Table of Contents tree.
     Returns 404 if the paper hasn't been analyzed yet.
@@ -153,7 +153,7 @@ async def chat_with_paper(req: ChatRequest, service: ChatServiceDep):
         raise HTTPException(status_code=500, detail=str(e))
     
 @router.get("/{paper_id}/history")
-def get_chat_history(paper_id: str, service: ChatServiceDep):
+async def get_chat_history(paper_id: str, service: ChatServiceDep):
     """
     Retrieves the full chat history for a specific paper.
     """

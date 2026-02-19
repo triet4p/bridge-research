@@ -177,3 +177,34 @@ export interface LMSettingUpdate {
 
     task_routing_update?: Record<string, string>;
 }
+
+export interface TrendAnalysis {
+    id: number;
+    time_window_days: number;
+    paper_count: number;
+    domain_distribution: Record<string, number>;
+    top_techniques: Record<string, number>;
+    report_markdown: string;
+    created_at: string;
+}
+
+export interface TrendGenerateRequest {
+    days: number;
+    query?: string;
+    categories: string[];
+    max_papers: number;
+}
+
+export interface TrendTaskResponse {
+    task_id: string;
+    message: string;
+}
+
+export interface TrendStatusResponse {
+    task_id: string;
+    status: 'pending' | 'processing' | 'completed' | 'failed';
+    progress: number;  // 0-100
+    message: string;   // e.g. "Fetching from ArXiv...", "Tagging 10/50..."
+    result?: TrendAnalysis;
+    error?: string;
+}

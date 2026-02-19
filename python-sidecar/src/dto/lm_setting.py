@@ -16,7 +16,7 @@ class LMSettingResponse(BaseModel):
     
     provider_configs: Dict[str, Dict[str, Any]] = Field(
         ..., 
-        description="Public configuration for each provider (model name, base URL). Example: `{'gemini': {'model': 'gemini-1.5-flash'}\}`"
+        description="Public configuration for each provider (model name, base URL). Example: `{'gemini': {'model': 'gemini-1.5-flash'} }`"
     )
     """
     Public configuration for each provider (model name, base URL). Example: `{'gemini': {'model': 'gemini-1.5-flash'}}`

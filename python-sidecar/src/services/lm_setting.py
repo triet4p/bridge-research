@@ -23,20 +23,25 @@ _logger = get_logger("[PythonSidecar - LM Setting]")
 PROVIDER_DEFAULTS = {
     "gemini": {
         "prefix": "gemini",
+        "default_concurrency": 1
     },
     "openai": {
         "prefix": "openai",
+        "default_concurrency": 1
     },
     "anthropic": {
         "prefix": "anthropic",
+        "default_concurrency": 1
     },
     "openrouter": {
         "prefix": "openai", # OpenRouter follows the OpenAI client standard
-        "default_base_url": "https://openrouter.ai/api/v1"
+        "default_base_url": "https://openrouter.ai/api/v1",
+        "default_concurrency": 1
     },
     "ollama": {
         "prefix": "ollama_chat", # Native DSPy adapter for Ollama
-        "default_base_url": "http://localhost:11434"
+        "default_base_url": "http://localhost:11434",
+        "default_concurrency": 1
     },
     # Future providers (Azure, Groq, DeepSeek) can be added here.
 }
@@ -202,6 +207,29 @@ class LMSettingService:
         except Exception as e:
             _logger.error(f"Failed to init LM for {provider_id}: {e}")
             return None
+        
+    async def get_concurrency_limit(self, task: LMTask) -> int:
+        """
+        Retrieves the concurrency limit for a specific task based on its assigned provider.
+        """
+        db_setting = self.lm_setting_repo.get()
+        if not db_setting:
+            return 1
+            
+        # 1. Xác định provider đang chạy task này
+        provider_id = db_setting.task_routing.get(task) or db_setting.active_provider
+        if not provider_id:
+            return 1
+            
+        # 2. Lấy config của user cho provider đó
+        user_conf = db_setting.provider_configs.get(provider_id, {})
+        
+        # 3. Ưu tiên: User Config -> Provider Default -> Toàn cục Default (1)
+        limit = user_conf.get("concurrency_limit")
+        if limit is not None:
+            return int(limit)
+            
+        return PROVIDER_DEFAULTS.get(provider_id, {}).get("default_concurrency", 1)
 
 
 async def get_lm_for_task(task: LMTask = LMTask.DEFAULT) -> dspy.LM | None:

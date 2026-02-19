@@ -6,7 +6,7 @@ from src.api.deps import LMSettingServiceDep
 router = APIRouter()
 
 @router.get("/", response_model=LMSettingResponse)
-def get_settings(service: LMSettingServiceDep):
+async def get_settings(service: LMSettingServiceDep):
     """
     Retrieves the current AI configuration.
     """

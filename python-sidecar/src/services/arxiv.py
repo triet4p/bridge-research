@@ -8,12 +8,14 @@ This module handles:
 - Checking against the local repository to mark papers as 'saved'.
 """
 
+import asyncio
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import List, Set
 import requests
 
 from src.core.constants import ARXIV_API_URL, ARXIV_XML_NAMESPACE
+from src.core.state import ArxivAPIState
 from src.core.logger import get_logger
 from src.dto.local_paper import LocalPaperResponse
 from src.models.local_paper import PaperReadStatus
@@ -25,12 +27,13 @@ class ArxivService:
     """
     Service class to search and fetch metadata from ArXiv.
     """
-    def __init__(self, local_paper_repo: LocalPaperRepository):
+    def __init__(self, local_paper_repo: LocalPaperRepository, arxiv_api_state: ArxivAPIState):
         """
         Args:
             local_paper_repo (LocalPaperRepository): Repository to check for existing saved papers.
         """
         self.local_paper_repo = local_paper_repo
+        self.arxiv_api_state = arxiv_api_state
     
     def search_papers(
         self, 
@@ -66,7 +69,12 @@ class ArxivService:
             "sortOrder": "descending"
         }
 
-        req = requests.Request('GET', ARXIV_API_URL, params=params)
+        req = requests.Request(
+            'GET',
+            ARXIV_API_URL,
+            params=params,
+            headers={"User-Agent": self.arxiv_api_state.user_agent}
+        )
         prepared = req.prepare()
 
         try:
@@ -81,6 +89,75 @@ class ArxivService:
         except Exception as e:
             _logger.error(f"❌ Arxiv fetch failed: {e}")
             return []
+        
+    async def fetch_bulk_papers(
+        self, 
+        days: int, 
+        query: str = "", 
+        categories: List[str] = None, 
+        max_results: int = 200
+    ) -> List[LocalPaperResponse]:
+        """
+        Fetches papers for Trend Radar using flexible filters.
+        """
+        # 1. Tính toán khoảng thời gian
+        end_dt = datetime.now(timezone.utc)
+        start_dt = end_dt - timedelta(days=days)
+        
+        s_date_str = start_dt.strftime("%Y-%m-%d")
+        e_date_str = end_dt.strftime("%Y-%m-%d")
+
+        # 2. Sử dụng logic format query có sẵn
+        # Hàm _format_query của chúng ta đã xử lý rất tốt việc gộp keyword, category và date
+        search_query = self._format_query(
+            query=query, 
+            categories=categories, 
+            start_date=s_date_str, 
+            end_date=e_date_str
+        )
+        
+        all_papers = []
+        save_ids = set(self.local_paper_repo.get_all_ids())
+        
+        if self.arxiv_api_state.http_client is None:
+            await self.arxiv_api_state.init_client()
+
+        client = self.arxiv_api_state.http_client
+        if client is None:
+            _logger.error("❌ ArXiv HTTP client is not available.")
+            return []
+
+        start_index = 0
+        page_size = 100
+
+        while len(all_papers) < max_results:
+            current_max = min(page_size, max_results - len(all_papers))
+            params = {
+                "search_query": search_query,
+                "start": start_index,
+                "max_results": current_max,
+                "sortBy": "submittedDate",
+                "sortOrder": "descending"
+            }
+
+            try:
+                _logger.info(f"📡 Bulk Fetch: {start_index} to {start_index + current_max} for query: {search_query}")
+                await self.arxiv_api_state.wait_for_arxiv()
+                response = await client.get(ARXIV_API_URL, params=params, timeout=30.0)
+                response.raise_for_status()
+
+                papers = self._parse_xml(response.content, save_ids)
+                if not papers:
+                    break
+
+                all_papers.extend(papers)
+                start_index += page_size
+
+            except Exception as e:
+                _logger.error(f"❌ Bulk fetch failed: {e}")
+                break
+                    
+        return all_papers
         
     def _format_query(self, query: str, categories: List[str] | None, 
                       start_date: str, end_date: str) -> str:

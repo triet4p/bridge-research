@@ -10,7 +10,7 @@ and cleanup) automatically per request.
 """
 
 from typing import Annotated
-from fastapi import Depends
+from fastapi import Depends, Request
 from sqlmodel import Session
 
 from src.core.database import get_session
@@ -18,15 +18,28 @@ from src.repositories.local_paper import LocalPaperRepository
 from src.repositories.lm_setting import LMSettingRepository 
 from src.repositories.analysis import AnalysisRepository
 from src.repositories.chat import ChatRepository
+from src.repositories.trend import TrendRepository
 from src.services.arxiv import ArxivService
 from src.services.local_paper import LocalPaperService
 from src.services.lm_setting import LMSettingService 
 from src.services.summary import PaperSummaryService
 from src.services.paper_content import PaperContentService
 from src.services.paper_chat import PaperChatService
+from src.services.trend import TrendService
+from src.core.state import ArxivAPIState, SystemState
 
 # 1. Base Session
 SessionDep = Annotated[Session, Depends(get_session)]
+
+
+def get_arxiv_api_state(request: Request) -> ArxivAPIState:
+    return request.app.state.arxiv_api_state
+
+def get_system_state(request: Request) -> SystemState:
+    return request.app.state.system_state
+
+ArxivAPIStateDep = Annotated[ArxivAPIState, Depends(get_arxiv_api_state)]
+SystemStateDep = Annotated[SystemState, Depends(get_system_state)]
 
 # 2. Repositories
 def get_local_paper_repo(session: SessionDep) -> LocalPaperRepository:
@@ -41,14 +54,18 @@ def get_analysis_repo(session: SessionDep) -> AnalysisRepository:
 def get_chat_repo(session: SessionDep) -> ChatRepository:
     return ChatRepository(session)
 
+def get_trend_repo(session: SessionDep) -> TrendRepository:
+    return TrendRepository(session)
+
 LocalPaperRepoDep = Annotated[LocalPaperRepository, Depends(get_local_paper_repo)]
 LMSettingRepoDep = Annotated[LMSettingRepository, Depends(get_lm_setting_repo)]
 AnalysisRepoDep = Annotated[AnalysisRepository, Depends(get_analysis_repo)]
 ChatRepoDep = Annotated[ChatRepository, Depends(get_chat_repo)]
+TrendRepoDep = Annotated[TrendRepository, Depends(get_trend_repo)]
 
 # 3. Services
-def get_arxiv_service(repo: LocalPaperRepoDep) -> ArxivService:
-    return ArxivService(repo)
+def get_arxiv_service(repo: LocalPaperRepoDep, arxiv_state: ArxivAPIStateDep) -> ArxivService:
+    return ArxivService(repo, arxiv_state)
 
 def get_local_paper_service(
     local_paper_repo: LocalPaperRepoDep, 
@@ -73,6 +90,14 @@ def get_summary_service() -> PaperSummaryService:
 def get_chat_service(chat_repo: ChatRepoDep, content_service: 'ContentServiceDep') -> PaperChatService:
     return PaperChatService(chat_repo, content_service)
 
+def get_trend_service(
+    arxiv_service: 'ArxivServiceDep', 
+    lm_setting_service: 'LMSettingServiceDep',
+    trend_repo: TrendRepoDep, # Thay Session bằng Repo trực tiếp
+    system_state: SystemStateDep
+) -> TrendService:
+    return TrendService(arxiv_service, lm_setting_service, trend_repo, system_state)
+
 # Type Aliases
 ArxivServiceDep = Annotated[ArxivService, Depends(get_arxiv_service)]
 LocalPaperServiceDep = Annotated[LocalPaperService, Depends(get_local_paper_service)]
@@ -80,3 +105,4 @@ LMSettingServiceDep = Annotated[LMSettingService, Depends(get_lm_setting_service
 ContentServiceDep = Annotated[PaperContentService, Depends(get_content_service)]
 SummaryServiceDep = Annotated[PaperSummaryService, Depends(get_summary_service)]
 ChatServiceDep = Annotated[PaperChatService, Depends(get_chat_service)]
+TrendServiceDep = Annotated[TrendService, Depends(get_trend_service)]

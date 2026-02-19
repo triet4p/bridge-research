@@ -9,6 +9,6 @@
  * Defines the possible main views or tabs within the application.
  * - `search`: The view for discovering new papers from ArXiv.
  * - `library`: The view for browsing papers saved in the local database.
- * @type {'search' | 'library'}
+ * @type {'search' | 'library' | 'trends'}
  */
-export type ViewMode = 'search' | 'library';
+export type ViewMode = 'search' | 'library' | 'trends';

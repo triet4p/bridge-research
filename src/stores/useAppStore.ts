@@ -39,6 +39,9 @@ interface AppState {
     isSettingsOpen: boolean;
     /** Flag indicating if the frontend has successfully connected to the backend sidecar. */
     isBackendReady: boolean;
+    /** Track active operations to conditionally skip health checks */
+    activeOperations: Set<string>;
+    activeTrendTaskId: string | null;
     
     // --- Actions ---
     /** Updates the search query string. */
@@ -57,6 +60,12 @@ interface AppState {
     closeSettings: () => void;
     /** Sets the connection status of the backend. */
     setBackendReady: (status: boolean) => void;
+    /** Register an active operation */
+    addOperation: (id: string) => void;
+    /** Remove a completed operation */
+    removeOperation: (id: string) => void;
+
+    setActiveTrendTaskId: (id: string | null) => void;
 }
 
 /**
@@ -81,6 +90,8 @@ export const useAppStore = create<AppState>((set) => ({
     currentView: 'search',
     isSettingsOpen: false,
     isBackendReady: false,
+    activeOperations: new Set(),
+    activeTrendTaskId: null, 
 
     setSearchQuery: (query) => set({ searchQuery: query }),
     
@@ -103,4 +114,25 @@ export const useAppStore = create<AppState>((set) => ({
     closeSettings: () => set({ isSettingsOpen: false }),
 
     setBackendReady: (status) => set({ isBackendReady: status }),
+    
+    addOperation: (id) => set((state) => {
+        const newOps = new Set(state.activeOperations);
+        newOps.add(id);
+        return { activeOperations: newOps };
+    }),
+    
+    removeOperation: (id) => set((state) => {
+        const newOps = new Set(state.activeOperations);
+        newOps.delete(id);
+        return { activeOperations: newOps };
+    }),
+
+    setActiveTrendTaskId: (id) => set({ activeTrendTaskId: id }),
 }));
+
+/**
+ * Helper selector to check if any operations are currently active
+ */
+export const hasActiveOperations = (): boolean => {
+    return useAppStore.getState().activeOperations.size > 0;
+};
