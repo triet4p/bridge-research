@@ -28,7 +28,7 @@ app = FastAPI(
 
 app.state.system_state = SystemState()
 app.state.arxiv_api_state = ArxivAPIState()
-app.state.watchdog = SidecarWatchdog(timeout_seconds=120, check_interval_seconds=5.0)
+app.state.watchdog = SidecarWatchdog(timeout_seconds=45, check_interval_seconds=5.0)
 
 app.add_middleware(
     CORSMiddleware,

@@ -1,9 +1,11 @@
 import asyncio
-from collections import Counter
+from collections import Counter, defaultdict
 import json
+import json_repair
 import re
 from typing import List, Dict
 import uuid
+from pydantic import BaseModel, Field
 import dspy
 from src.repositories.trend import TrendRepository 
 from src.services.arxiv import ArxivService
@@ -20,6 +22,13 @@ _logger = get_logger("[PythonSidecar - Trend Service]")
 # In-memory job store: task_id -> TrendStatusResponse
 # Note: For production at scale, use Redis, but for a desktop app with 1 user, a dict is sufficient.
 _JOB_STORE: Dict[str, TrendStatusResponse] = {}
+
+class ReportSection(BaseModel):
+    title: str = Field(..., description="The title of the report section.")
+    brief: str = Field(..., description="Detailed instructions on what to cover in this section.")
+    
+class ReportPlan(BaseModel):
+    sections: List[ReportSection] = Field(..., description="A list of sections that the report should contain.")
 
 class PaperTaggerSignature(dspy.Signature):
     """
@@ -38,59 +47,170 @@ class PaperTaggerSignature(dspy.Signature):
     domain: str = dspy.OutputField(desc="One category from the allowed list.")
     research_task: str = dspy.OutputField(desc="Short task name (max 3 words).")
     techniques: List[str] = dspy.OutputField(desc="List of 2-3 technical keywords.")
-    
-class TrendSynthesizerSignature(dspy.Signature):
+
+class TrendPlannerSignature(dspy.Signature):
     """
-    You are a senior AI Research Intelligence Analyst.
-
-    TASK:
-    Write a long-form, structured weekly intelligence report from:
-    - stats_data (JSON statistics)
-    - exemplar_data (paper titles/examples)
-    - time_window
-
-    CRITICAL OUTPUT RULES (MUST FOLLOW):
-    1) Output in Markdown with EXACT section headings below (same order):
-        ## Executive Summary
-        ## Domain Analysis
-        ## Emerging Techniques
-        ## Strategic Recommendations
-        ## Implementation Roadmap
-        ## Risks and Watchlist
-
-    2) Minimum length: 1500 words.
-        Target range: 1500-3000 words.
-        Do NOT output a short summary.
-
-    3) Evidence requirement:
-        - In "Domain Analysis", mention specific paper titles from exemplar_data.
-        - Cite at least 1-2 concrete paper titles per major domain when available.
-        - If evidence is missing, explicitly state: "Insufficient evidence from exemplar_data".
-
-    4) Section requirements:
-        - Executive Summary: exactly 1 paragraph, 120-180 words.
-        - Domain Analysis: at least 3 paragraphs, each focused on one major domain trend.
-        - Emerging Techniques: at least 2 paragraphs, explain why each technique is rising and practical engineering impact.
-        - Strategic Recommendations: exactly 3 numbered recommendations (1,2,3), each 60-100 words.
-        - Implementation Roadmap: 3 phases (Now, Next, Later) with concrete actions.
-        - Risks and Watchlist: at least 3 risks with mitigation notes.
-
-    5) Writing style:
-        - Professional, analytical, and practical for IT engineering leaders.
-        - Use concrete language, avoid vague claims.
-        - Avoid repeating the same sentence pattern.
-
-    6) Final self-check before finishing:
-        - Ensure all 6 required headings are present.
-        - Ensure word count is >= 1500.
-        - Ensure recommendations are exactly 3 items.
+    ROLE: Senior Research Strategist.
+    TASK: Create a 5-section outline for a weekly AI Research Report.
+    
+    INSTRUCTIONS:
+    1. Study 'stats_data' to find which domains are growing.
+    2. Study 'exemplar_data' to find specific papers to cite.
+    3. You MUST produce a plan with exactly 5 sections.
+    4. Each section must have a 'title' (max 5 words) and a 'brief' (detailed instructions).
+    
+    MANDATORY OUTPUT FORMAT:
+    Your output must be a VALID JSON object inside a code block. 
+    Strictly follow this structure:
+    ```json
+    {
+      "sections": [
+        {"title": "Section 1 Name", "brief": "Instructions for this section..."},
+        {"title": "Section 2 Name", "brief": "Instructions for this section..."},
+        {"title": "Section 3 Name", "brief": "Instructions for this section..."},
+        {"title": "Section 4 Name", "brief": "Instructions for this section..."},
+        {"title": "Section 5 Name", "brief": "Instructions for this section..."}
+      ]
+    }
+    ```
+    IMPORTANT: Use DOUBLE QUOTES (") for all keys and string values.
     """
+    stats_data: str = dspy.InputField(desc="JSON string of domain/technique counts. Use this for statistical context.")
+    exemplar_data: str = dspy.InputField(desc="List of paper titles grouped by domain. Use these as evidence.")
+    time_window: str = dspy.InputField(desc="The time range (e.g., 'Last 7 days').")
     
-    stats_data: str = dspy.InputField(desc="JSON string containing frequencies of domains and techniques.")
-    exemplar_data: str = dspy.InputField(desc="A summary of top paper titles for each major domain/technique.")
-    time_window: str = dspy.InputField(desc="The analysis period.")
+    report_plan: str = dspy.OutputField(desc="A single JSON object containing a 'sections' list with 'title' and 'brief' for each.")
+
+class TrendSectionWriterSignature(dspy.Signature):
+    """
+    ROLE: Professional Technical Writer.
+    TASK: Write ONE specific section of a research report.
     
-    trend_report: str = dspy.OutputField(desc="The comprehensive Markdown report.")
+    STRICT RULES:
+    1. Focus ONLY on the 'current_section_title'.
+    2. Follow the 'section_brief' strictly.
+    3. MENTION at least 2-3 paper titles from 'exemplar_data' as evidence.
+    4. LENGTH: Write at least 3-4 detailed paragraphs (300+ words).
+    5. COHERENCE: Read 'context_memory' to see what was already written. DO NOT REPEAT those points.
+    6. FORMAT: RICH MARKDOWN: Use bullet points, bold text for key terms, and MARKDOWN TABLES to compare data if relevant.
+    7. DO NOT write the section title or any headers at the beginning.
+    8. CITATIONS: Use the format [Paper Title] when referencing studies from 'exemplar_data'.
+    """
+    stats_data: str = dspy.InputField(desc="Global statistics for context.")
+    exemplar_data: str = dspy.InputField(desc="Source paper titles to be cited in the text.")
+    current_section_title: str = dspy.InputField(desc="The heading of the section you are writing now.")
+    section_brief: str = dspy.InputField(desc="Detailed instructions on what points to cover in this section.")
+    context_memory: str = dspy.InputField(desc="Summary of previously written sections. Use this to avoid repetition.")
+    
+    section_markdown: str = dspy.OutputField(desc="The complete Markdown content for this section. No preamble. DO NOT include the title header.")
+
+def extract_json_helper(raw_text: str) -> ReportPlan:
+    try:
+        data = json_repair.loads(raw_text)
+        
+        return ReportPlan.model_validate(data)   
+    except Exception as e:
+        _logger.warning(f"Failed to parse AI JSON plan: {e}. Raw text was: {raw_text[:]}...")
+    
+    return ReportPlan(sections=[])
+
+def planner_reward_fn(args, pred: dspy.Prediction) -> float:
+    raw_text = pred.report_plan
+    _logger.info(f"Evaluating plan reward for AI output: {raw_text}...")
+    score = 0.0
+    
+    # Sử dụng chính bộ parser "nồi đồng cối đá" để check
+    # (Giả sử hàm _extract_json_plan được tách ra làm helper)
+    plan = extract_json_helper(raw_text)
+    
+    if plan and plan.sections:
+        score += 0.7 # Parse thành công JSON
+        score += min(len(plan.sections), 5) * 0.06 
+            
+    _logger.info(f"Calculated reward score: {score} for plan with {len(plan.sections) if plan else 0} sections.")
+            
+    return score
+
+class TrendSynthesizerAgent(dspy.Module):
+    """
+    An Agentic Module that breaks down report generation into a multi-stage workflow.
+    Designed to help SLMs produce long-form, high-quality content.
+    """
+    def __init__(self):
+        super().__init__()
+        self.planner_base = dspy.ChainOfThought(TrendPlannerSignature)
+        self.planner = dspy.BestOfN(
+            module=self.planner_base,
+            N=5,  # Generate 5 different plans and pick the best one
+            reward_fn=planner_reward_fn,
+            threshold=0.85
+        )
+        self.writer = dspy.ChainOfThought(TrendSectionWriterSignature)
+
+    def forward(self, stats_data: str, exemplar_data: str, time_window: str, callback=None):
+        _logger.info("📋 Agent is planning the report structure...")
+        
+        plan_res = self.planner(
+            stats_data=stats_data, 
+            exemplar_data=exemplar_data, 
+            time_window=time_window
+        )
+        
+        _logger.info(f"📑 Raw plan from AI: {plan_res.report_plan}...")
+        
+        # Parse thủ công
+        plan = extract_json_helper(plan_res.report_plan)
+        sections = plan.sections if plan else []
+        _logger.info(f"✅ Extracted {len(sections)} sections from AI plan.")
+
+        # FALLBACK SKELETON (Cực kỳ quan trọng cho SLM 1.2B)
+        if not sections or len(sections) < 3:
+            _logger.warning("⚠️ AI Plan was invalid or too short. Using Safety Skeleton.")
+            sections = [
+                {"title": "Executive Summary", "brief": "Provide a high-level overview of the week's research momentum."},
+                {"title": "Domain & Sector Analysis", "brief": "Analyze the distribution of research across NLP, CV, and other fields."},
+                {"title": "Breakthrough Techniques", "brief": "Focus on the most cited methods like LoRA, RAG, or new architectures."},
+                {"title": "Engineering Implications", "brief": "How these findings affect real-world software and AI deployment."},
+                {"title": "Future Outlook", "brief": "Predicted shifts for the coming month based on current data."}
+            ]
+            raise ValueError("AI Plan parsing failed. Used fallback skeleton instead.")
+
+        report_parts = []
+        context_memory = "Report started."
+        total_sections = len(sections)
+
+        for i, section in enumerate(sections, 1):
+            title = section.title
+            brief = section.brief
+            
+            if callback:
+                callback(i, total_sections, title)
+
+            _logger.info(f"✍️ Writing Section {i}/{total_sections}: {title}")
+            
+            # Gọi Writer cho từng phần
+            write_res = self.writer(
+                stats_data=stats_data,
+                exemplar_data=exemplar_data,
+                current_section_title=title,
+                section_brief=brief,
+                context_memory=context_memory
+            )
+            
+            content = write_res.section_markdown
+            content = write_res.section_markdown.strip()
+            
+            # 🚀 FIX LẶP TITLE: Xóa bỏ các dòng bắt đầu bằng # (nếu AI lỡ viết tiêu đề)
+            content = re.sub(r'^#+.*?\n', '', content, flags=re.MULTILINE).strip()
+            report_parts.append(f"## {title}\n\n{content}")
+            
+            # Update memory để tránh lặp ý
+            context_memory += f"\n- Section '{title}' completed. Focus was: {brief[:50]}."
+
+        final_report = f"# Research Intelligence Report: {time_window}\n\n"
+        final_report += "\n\n".join(report_parts)
+        
+        return dspy.Prediction(content=final_report)
 
 class TrendService:
     def __init__(self, arxiv_service: ArxivService, lm_setting_service: LMSettingService,
@@ -101,7 +221,10 @@ class TrendService:
         self.system_state = system_state
         # Initialize the DSPy module
         self.tagger = dspy.ChainOfThought(PaperTaggerSignature)
-        self.synthesizer = dspy.ChainOfThought(TrendSynthesizerSignature)
+        
+    def create_synthesizer_agent(self):
+        # Create a new instance of the agent for each request to avoid state issues
+        return TrendSynthesizerAgent()
 
     async def generate_trend_radar(self, req: TrendGenerateRequest) -> TrendAnalysisResponse:
         """
@@ -232,7 +355,6 @@ class TrendService:
         Executes the Reduce Phase (Statistical Aggregation + AI Synthesis).
         This logic was extracted from generate_trend_radar for reusability.
         """
-        from collections import defaultdict
 
         task_prefix = f"[Task {task_id[:8]}] " if task_id else ""
 
@@ -318,14 +440,24 @@ class TrendService:
         # 3.3. AI Report Generation
         # Dùng model chuyên biệt cho task TREND (thường là model mạnh để viết report hay)
         lm_synthesis = await get_lm_for_task(LMTask.TREND)
+        
+        agent = self.create_synthesizer_agent()
+        
+        # 2. Callback để cập nhật SSE Progress
+        def update_progress(step, total, title):
+            if task_id and task_id in _JOB_STORE:
+                # Progress từ 80% đến 98%
+                sub_progress = int(80 + (step / total * 18))
+                _JOB_STORE[task_id].progress = sub_progress
+                _JOB_STORE[task_id].message = f"Writing Section {step}/{total}: {title}..."
 
         # Update progress to 90% before AI synthesis
         if task_id:
-            _JOB_STORE[task_id].progress = 90
+            _JOB_STORE[task_id].progress = 80
             _JOB_STORE[task_id].message = "AI Intelligence Agent is synthesizing deep insights..."
 
         _logger.info(f"🧠 {task_prefix}Calling AI to synthesize report for {len(tagged_results)} papers...")
-        _logger.info(f"🤖 {task_prefix}Using model: {lm_synthesis.__class__.__name__}")
+        _logger.info(f"🤖 {task_prefix}Using model: {lm_synthesis}")
 
         stats_summary = {
             "total_papers": len(tagged_results),
@@ -338,9 +470,11 @@ class TrendService:
                 stats_data=json.dumps(stats_summary),
                 exemplar_data=exemplar_str,
                 time_window=f"Last {days} days",
-                lm=lm_synthesis
+                lm=lm_synthesis,
+                synthesizer_agent=agent,
+                callback=update_progress
             )
-            report_content = synthesis_res.trend_report
+            report_content = synthesis_res.content
             _logger.info(f"✅ {task_prefix}AI synthesis completed, report length: {len(report_content)} chars")
         except Exception as e:
             _logger.error(f"💥 {task_prefix}AI Synthesis failed: {e}")
@@ -500,10 +634,13 @@ class TrendService:
         with dspy.context(lm=lm):
             return self.tagger(abstract=paper.summary[:2000])
         
-    def _run_synthesis_task(self, stats_data: str, exemplar_data: str, time_window: str, lm: dspy.LM):
+    def _run_synthesis_task(self, stats_data: str, exemplar_data: str, time_window: str, 
+                            lm: dspy.LM, synthesizer_agent: TrendSynthesizerAgent, callback=None):
+        
         with dspy.context(lm=lm):
-            return self.synthesizer(
+            return synthesizer_agent(
                 stats_data=stats_data,
                 exemplar_data=exemplar_data,
-                time_window=time_window
+                time_window=time_window,
+                callback=callback
             )

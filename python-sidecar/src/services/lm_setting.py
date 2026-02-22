@@ -202,6 +202,7 @@ class LMSettingService:
                 api_key=api_key, 
                 api_base=api_base, 
                 max_tokens=32000 if provider_id != 'ollama' else 16000,
+                temperature=0.5,
                 cache=False # Disable dspy cache to ensure fresh research results
             )
         except Exception as e:
