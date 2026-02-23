@@ -1,3 +1,25 @@
+"""
+Trend analysis service for generating AI-powered research trend reports.
+
+This module provides the TrendService class for orchestrating the complete
+trend analysis pipeline, including:
+- **Paper Acquisition**: Fetching papers from ArXiv API.
+- **AI Tagging**: Extracting domain, research task, and techniques using DSPy.
+- **Statistical Aggregation**: Computing domain distributions and top techniques.
+- **AI Report Synthesis**: Generating markdown reports using a multi-stage agent workflow.
+- **Async Task Management**: Background job processing with progress tracking.
+
+The service uses a Map-Reduce pattern:
+1. **Map Phase**: Tag papers in parallel with AI.
+2. **Reduce Phase**: Aggregate statistics and synthesize insights.
+
+DSPy Components:
+- **PaperTaggerSignature**: Signature for extracting metadata from abstracts.
+- **TrendPlannerSignature**: Signature for creating report outlines.
+- **TrendSectionWriterSignature**: Signature for writing individual report sections.
+- **TrendSynthesizerAgent**: Multi-stage agent for report generation.
+"""
+
 import asyncio
 from collections import Counter, defaultdict
 import json
@@ -7,7 +29,7 @@ from typing import List, Dict
 import uuid
 from pydantic import BaseModel, Field
 import dspy
-from src.repositories.trend import TrendRepository 
+from src.repositories.trend import TrendRepository
 from src.services.arxiv import ArxivService
 from src.models.trend import TrendAnalysis, PaperTagCache
 from src.dto.trend import TrendGenerateRequest, TrendAnalysisResponse, TrendTaskResponse, TrendStatusResponse
@@ -24,26 +46,39 @@ _logger = get_logger("[PythonSidecar - Trend Service]")
 _JOB_STORE: Dict[str, TrendStatusResponse] = {}
 
 class ReportSection(BaseModel):
+    """
+    Model representing a single section of a trend report.
+
+    Attributes:
+        title (str): The title of the report section (max 5 words recommended).
+        brief (str): Detailed instructions on what content to cover in this section.
+    """
     title: str = Field(..., description="The title of the report section.")
     brief: str = Field(..., description="Detailed instructions on what to cover in this section.")
-    
+
 class ReportPlan(BaseModel):
+    """
+    Model representing the complete outline of a trend report.
+
+    Attributes:
+        sections (List[ReportSection]): A list of sections that the report should contain.
+    """
     sections: List[ReportSection] = Field(..., description="A list of sections that the report should contain.")
 
 class PaperTaggerSignature(dspy.Signature):
     """
     TASK: Extract high-level metadata from a research paper abstract.
-    
+
     STRICT RULES:
     1. DOMAIN: Choose the closest one from this list: [NLP, Computer Vision, Multimodal, Reinforcement Learning, Robotics, Audio/Speech, Optimization, AI Safety, Medical AI, Graph Neural Networks].
     2. RESEARCH TASK: A very short noun phrase (max 3 words). Example: "Image Generation", "Long-context Reasoning".
-    3. TECHNIQUES: List 2-3 specific technical names. 
+    3. TECHNIQUES: List 2-3 specific technical names.
        - NO explanations, NO parentheses, NO verbs.
        - Example: ["LoRA", "Transformer", "Quantization"] - NOT ["Using LoRA for adaptation"].
     """
-    
+
     abstract: str = dspy.InputField(desc="The abstract of the research paper.")
-    
+
     domain: str = dspy.OutputField(desc="One category from the allowed list.")
     research_task: str = dspy.OutputField(desc="Short task name (max 3 words).")
     techniques: List[str] = dspy.OutputField(desc="List of 2-3 technical keywords.")
@@ -52,15 +87,15 @@ class TrendPlannerSignature(dspy.Signature):
     """
     ROLE: Senior Research Strategist.
     TASK: Create a 5-section outline for a weekly AI Research Report.
-    
+
     INSTRUCTIONS:
     1. Study 'stats_data' to find which domains are growing.
     2. Study 'exemplar_data' to find specific papers to cite.
     3. You MUST produce a plan with exactly 5 sections.
     4. Each section must have a 'title' (max 5 words) and a 'brief' (detailed instructions).
-    
+
     MANDATORY OUTPUT FORMAT:
-    Your output must be a VALID JSON object inside a code block. 
+    Your output must be a VALID JSON object inside a code block.
     Strictly follow this structure:
     ```json
     {
@@ -78,14 +113,14 @@ class TrendPlannerSignature(dspy.Signature):
     stats_data: str = dspy.InputField(desc="JSON string of domain/technique counts. Use this for statistical context.")
     exemplar_data: str = dspy.InputField(desc="List of paper titles grouped by domain. Use these as evidence.")
     time_window: str = dspy.InputField(desc="The time range (e.g., 'Last 7 days').")
-    
+
     report_plan: str = dspy.OutputField(desc="A single JSON object containing a 'sections' list with 'title' and 'brief' for each.")
 
 class TrendSectionWriterSignature(dspy.Signature):
     """
     ROLE: Professional Technical Writer.
     TASK: Write ONE specific section of a research report.
-    
+
     STRICT RULES:
     1. Focus ONLY on the 'current_section_title'.
     2. Follow the 'section_brief' strictly.
@@ -101,42 +136,80 @@ class TrendSectionWriterSignature(dspy.Signature):
     current_section_title: str = dspy.InputField(desc="The heading of the section you are writing now.")
     section_brief: str = dspy.InputField(desc="Detailed instructions on what points to cover in this section.")
     context_memory: str = dspy.InputField(desc="Summary of previously written sections. Use this to avoid repetition.")
-    
+
     section_markdown: str = dspy.OutputField(desc="The complete Markdown content for this section. No preamble. DO NOT include the title header.")
 
 def extract_json_helper(raw_text: str) -> ReportPlan:
+    """
+    Helper function to parse JSON from AI-generated text.
+
+    This function uses json_repair to robustly parse potentially malformed JSON
+    output from the AI model. If parsing fails, it returns an empty ReportPlan.
+
+    Args:
+        raw_text (str): The raw text output from the AI model.
+
+    Returns:
+        ReportPlan: The parsed report plan, or an empty plan if parsing failed.
+    """
     try:
         data = json_repair.loads(raw_text)
-        
-        return ReportPlan.model_validate(data)   
+
+        return ReportPlan.model_validate(data)
     except Exception as e:
         _logger.warning(f"Failed to parse AI JSON plan: {e}. Raw text was: {raw_text[:]}...")
-    
+
     return ReportPlan(sections=[])
 
 def planner_reward_fn(args, pred: dspy.Prediction) -> float:
+    """
+    Reward function for evaluating the quality of AI-generated report plans.
+
+    This function scores plans based on:
+    1. Successful JSON parsing (0.7 points).
+    2. Number of sections (up to 0.3 points for 5 sections).
+
+    Args:
+        args: DSPy internal arguments.
+        pred (dspy.Prediction): The AI-generated prediction containing report_plan.
+
+    Returns:
+        float: The reward score (0.0 to 1.0).
+    """
     raw_text = pred.report_plan
     _logger.info(f"Evaluating plan reward for AI output: {raw_text}...")
     score = 0.0
-    
+
     # Sử dụng chính bộ parser "nồi đồng cối đá" để check
     # (Giả sử hàm _extract_json_plan được tách ra làm helper)
     plan = extract_json_helper(raw_text)
-    
+
     if plan and plan.sections:
         score += 0.7 # Parse thành công JSON
-        score += min(len(plan.sections), 5) * 0.06 
-            
+        score += min(len(plan.sections), 5) * 0.06
+
     _logger.info(f"Calculated reward score: {score} for plan with {len(plan.sections) if plan else 0} sections.")
-            
+
     return score
 
 class TrendSynthesizerAgent(dspy.Module):
     """
-    An Agentic Module that breaks down report generation into a multi-stage workflow.
-    Designed to help SLMs produce long-form, high-quality content.
+    Agentic module that breaks down report generation into a multi-stage workflow.
+
+    This DSPy module orchestrates the trend report generation process:
+    1. **Planning Stage**: Uses BestOfN to generate and select the best 5-section outline.
+    2. **Writing Stage**: Iteratively writes each section with context awareness.
+
+    The agent is designed to help Small Language Models (SLMs) produce long-form,
+    high-quality content by breaking the task into manageable subtasks.
+
+    Attributes:
+        planner_base (dspy.ChainOfThought): Base planner using ChainOfThought.
+        planner (dspy.BestOfN): Planner with BestOfN optimization (N=5 candidates).
+        writer (dspy.ChainOfThought): Section writer using ChainOfThought.
     """
     def __init__(self):
+        """Initialize the synthesizer agent with planner and writer components."""
         super().__init__()
         self.planner_base = dspy.ChainOfThought(TrendPlannerSignature)
         self.planner = dspy.BestOfN(
@@ -148,16 +221,29 @@ class TrendSynthesizerAgent(dspy.Module):
         self.writer = dspy.ChainOfThought(TrendSectionWriterSignature)
 
     def forward(self, stats_data: str, exemplar_data: str, time_window: str, callback=None):
+        """
+        Execute the multi-stage report generation workflow.
+
+        Args:
+            stats_data (str): JSON string of domain/technique statistics.
+            exemplar_data (str): List of paper titles for evidence.
+            time_window (str): Time range description (e.g., 'Last 7 days').
+            callback (Callable, optional): Progress callback function with
+                signature (step, total, title).
+
+        Returns:
+            dspy.Prediction: Prediction containing the final report content.
+        """
         _logger.info("📋 Agent is planning the report structure...")
-        
+
         plan_res = self.planner(
-            stats_data=stats_data, 
-            exemplar_data=exemplar_data, 
+            stats_data=stats_data,
+            exemplar_data=exemplar_data,
             time_window=time_window
         )
-        
+
         _logger.info(f"📑 Raw plan from AI: {plan_res.report_plan}...")
-        
+
         # Parse thủ công
         plan = extract_json_helper(plan_res.report_plan)
         sections = plan.sections if plan else []
@@ -213,24 +299,80 @@ class TrendSynthesizerAgent(dspy.Module):
         return dspy.Prediction(content=final_report)
 
 class TrendService:
+    """
+    Service for orchestrating the complete trend analysis pipeline.
+
+    This class manages the end-to-end process of generating AI-powered research
+    trend reports, including:
+    - **Paper Acquisition**: Fetching papers from ArXiv API.
+    - **AI Tagging**: Extracting domain, task, and techniques using DSPy.
+    - **Statistical Aggregation**: Computing domain distributions and top techniques.
+    - **AI Report Synthesis**: Generating markdown reports using multi-stage agents.
+    - **Async Task Management**: Background job processing with progress tracking.
+
+    The service supports both synchronous (legacy) and asynchronous (recommended)
+    execution modes for trend generation.
+
+    Attributes:
+        arxiv_service (ArxivService): Service for fetching papers from ArXiv.
+        trend_repo (TrendRepository): Repository for database operations.
+        lm_setting_service (LMSettingService): Service for LLM configuration.
+        system_state (SystemState): Shared application state for health tracking.
+        tagger (dspy.ChainOfThought): DSPy module for paper tagging.
+    """
+
     def __init__(self, arxiv_service: ArxivService, lm_setting_service: LMSettingService,
                  trend_repo: TrendRepository, system_state: SystemState):
+        """
+        Initialize the TrendService with its dependencies.
+
+        Args:
+            arxiv_service (ArxivService): Service for fetching papers from ArXiv.
+            lm_setting_service (LMSettingService): Service for LLM configuration.
+            trend_repo (TrendRepository): Repository for database operations.
+            system_state (SystemState): Shared application state for health tracking.
+        """
         self.arxiv_service = arxiv_service
         self.trend_repo = trend_repo
         self.lm_setting_service = lm_setting_service
         self.system_state = system_state
         # Initialize the DSPy module
         self.tagger = dspy.ChainOfThought(PaperTaggerSignature)
-        
+
     def create_synthesizer_agent(self):
+        """
+        Create a new instance of the synthesizer agent.
+
+        Returns:
+            TrendSynthesizerAgent: A fresh agent instance for report generation.
+
+        Note:
+            A new instance is created for each request to avoid state contamination
+            between concurrent trend generation tasks.
+        """
         # Create a new instance of the agent for each request to avoid state issues
         return TrendSynthesizerAgent()
 
     async def generate_trend_radar(self, req: TrendGenerateRequest) -> TrendAnalysisResponse:
         """
-        Legacy method for synchronous trend generation.
-        This method is kept for backward compatibility but is not recommended for long-running tasks.
-        Use start_trend_generation() instead for better UX with polling.
+        Generate a trend analysis report synchronously (legacy method).
+
+        This method executes the complete trend analysis pipeline:
+        1. Fetch papers from ArXiv.
+        2. Tag papers in parallel using AI.
+        3. Aggregate statistics and synthesize the report.
+
+        Args:
+            req (TrendGenerateRequest): Request containing analysis parameters
+                (days, query, categories, max_papers).
+
+        Returns:
+            TrendAnalysisResponse: The complete trend analysis result.
+
+        Note:
+            This method is kept for backward compatibility but is not recommended
+            for long-running tasks. Use start_trend_generation() instead for
+            better UX with polling.
         """
         # Step 1: Acquisition (Sprint 2.1)
         papers = await self.arxiv_service.fetch_bulk_papers(
@@ -239,10 +381,10 @@ class TrendService:
             categories=req.categories,
             max_results=req.max_papers
         )
-        
+
         # Step 2: Map Phase - Tagging (Sprint 2.2)
         tagged_results = await self._tag_papers_parallel(papers, task_id=None)
-        
+
         if not tagged_results:
             raise ValueError("Failed to extract tags from papers.")
 
@@ -251,10 +393,24 @@ class TrendService:
 
     async def start_trend_generation(self, req: TrendGenerateRequest) -> TrendTaskResponse:
         """
-        Starts the generation process in the background and returns a Task ID.
+        Start trend generation as a background task and return a task ID.
+
+        This method initiates the analysis pipeline asynchronously, allowing
+        clients to poll for progress updates without blocking.
+
+        Args:
+            req (TrendGenerateRequest): Request containing analysis parameters.
+
+        Returns:
+            TrendTaskResponse: Response containing the task ID for polling.
+
+        Example:
+            >>> response = await service.start_trend_generation(request)
+            >>> task_id = response.task_id
+            >>> # Poll for status using get_task_status(task_id)
         """
         task_id = str(uuid.uuid4())
-        
+
         # Init job status
         _JOB_STORE[task_id] = TrendStatusResponse(
             task_id=task_id,
@@ -270,79 +426,108 @@ class TrendService:
 
     async def get_task_status(self, task_id: str) -> TrendStatusResponse:
         """
-        Retrieves the current status of a task.
+        Retrieve the current status of an async trend generation task.
+
+        This method is used by clients to poll for progress updates during
+        the background analysis pipeline execution.
+
+        Args:
+            task_id (str): The unique identifier of the background task.
+
+        Returns:
+            TrendStatusResponse: Response containing status, progress, and
+                result (if completed) or error (if failed).
+
+        Example:
+            >>> status = await service.get_task_status("abc-123")
+            >>> print(f"Progress: {status.progress}% - {status.status}")
         """
         task = _JOB_STORE.get(task_id)
         if not task:
             return TrendStatusResponse(
-                task_id=task_id, 
-                status="failed", 
-                progress=0, 
-                message="Task not found", 
+                task_id=task_id,
+                status="failed",
+                progress=0,
+                message="Task not found",
                 error="Invalid Task ID"
             )
         return task
 
     async def _run_trend_pipeline(self, task_id: str, req: TrendGenerateRequest):
         """
-        The heavy lifting function running in background.
-        Updates _JOB_STORE periodically.
+        Execute the complete trend analysis pipeline in the background.
+
+        This internal method orchestrates the three-phase pipeline:
+        1. **Fetching**: Retrieve papers from ArXiv API.
+        2. **Tagging**: Extract metadata using AI in parallel.
+        3. **Synthesis**: Aggregate statistics and generate the report.
+
+        The method updates the job store (_JOB_STORE) periodically to reflect
+        progress, allowing clients to poll for real-time updates.
+
+        Args:
+            task_id (str): The unique identifier for this task.
+            req (TrendGenerateRequest): Request containing analysis parameters.
+
+        Note:
+            This method increments/decrements the background task counter in
+            system_state to coordinate with the watchdog for process lifecycle.
         """
         await self.system_state.increment_background_tasks()
         try:
             _logger.info(f"🚀 [Task {task_id[:8]}] Starting Trend Analysis Pipeline")
             _logger.info(f"📋 [Task {task_id[:8]}] Config: {req.days} days, {req.max_papers} papers, categories={req.categories}")
-            
+
             # Update: Fetching
             _JOB_STORE[task_id].status = "processing"
             _JOB_STORE[task_id].message = "Fetching papers from ArXiv..."
             _JOB_STORE[task_id].progress = 10
             _logger.info(f"📡 [Task {task_id[:8]}] Phase 1: Fetching papers from ArXiv...")
-            
+
             papers = await self.arxiv_service.fetch_bulk_papers(
-                days=req.days, 
-                query=req.query, 
-                categories=req.categories, 
+                days=req.days,
+                query=req.query,
+                categories=req.categories,
                 max_results=req.max_papers
             )
-            
+
             if not papers:
                 _logger.warning(f"❌ [Task {task_id[:8]}] No papers found matching criteria")
                 _JOB_STORE[task_id].status = "failed"
                 _JOB_STORE[task_id].error = "No papers found matching criteria."
                 return
-            
+
             _logger.info(f"✅ [Task {task_id[:8]}] Fetched {len(papers)} papers successfully")
 
             # Update: Tagging
             _JOB_STORE[task_id].message = f"AI Tagging {len(papers)} papers..."
             _logger.info(f"🏷️  [Task {task_id[:8]}] Phase 2: AI Tagging phase started for {len(papers)} papers")
-            
+
             tagged_results = await self._tag_papers_parallel(papers, task_id)
-            
+
             if not tagged_results:
                 _logger.error(f"❌ [Task {task_id[:8]}] Failed to extract tags from papers")
                 _JOB_STORE[task_id].status = "failed"
                 _JOB_STORE[task_id].error = "Failed to extract tags from papers."
                 return
-            
+
             _logger.info(f"✅ [Task {task_id[:8]}] Successfully tagged {len(tagged_results)}/{len(papers)} papers")
-            
+
             # Update: Synthesis
             _JOB_STORE[task_id].message = "Synthesizing report..."
             _JOB_STORE[task_id].progress = 80
             _logger.info(f"📊 [Task {task_id[:8]}] Phase 3: Synthesis & Report Generation...")
-            
+
             # Execute Reduce Phase
             final_result = await self._execute_reduce_phase(tagged_results, req.days, task_id)
-            
+
             # Complete
             _JOB_STORE[task_id].status = "completed"
             _JOB_STORE[task_id].progress = 100
             _JOB_STORE[task_id].message = "Done"
             _JOB_STORE[task_id].result = final_result
             _logger.info(f"🎉 [Task {task_id[:8]}] Pipeline completed successfully!")
-            
+
         except Exception as e:
             _logger.error(f"💥 [Task {task_id[:8]}] Pipeline failed with error: {e}", exc_info=True)
             _JOB_STORE[task_id].status = "failed"
@@ -352,8 +537,25 @@ class TrendService:
 
     async def _execute_reduce_phase(self, tagged_results: List[Dict], days: int, task_id: str = None) -> TrendAnalysisResponse:
         """
-        Executes the Reduce Phase (Statistical Aggregation + AI Synthesis).
-        This logic was extracted from generate_trend_radar for reusability.
+        Execute the Reduce Phase: statistical aggregation and AI synthesis.
+
+        This method processes the tagged papers to:
+        1. Aggregate domain and technique statistics.
+        2. Build reference paper mappings for evidence.
+        3. Call the AI synthesizer agent to generate the report.
+        4. Persist the analysis result to the database.
+
+        Args:
+            tagged_results (List[Dict]): List of papers with AI-extracted tags.
+            days (int): Time window in days for the analysis.
+            task_id (str, optional): Task ID for progress updates.
+
+        Returns:
+            TrendAnalysisResponse: The complete trend analysis result.
+
+        Note:
+            This method was extracted from generate_trend_radar for reusability
+            between sync and async execution modes.
         """
 
         task_prefix = f"[Task {task_id[:8]}] " if task_id else ""
@@ -402,11 +604,8 @@ class TrendService:
                 domain_ref_seen[d_final].add(r['paper_id'])
                 domain_ref_map[d_final].append(paper_ref)
 
-            # 2. Chuẩn hóa Techniques (Xóa rác và giới hạn từ)
             for tech in r['techniques']:
-                # Xóa ngoặc đơn và nội dung bên trong: "LoRA (Low-rank...)" -> "LoRA"
                 t = re.sub(r'\(.*?\)', '', tech).strip()
-                # Chỉ lấy cụm từ nếu nó ngắn (tránh model giải thích dài dòng)
                 if len(t.split()) <= 4:
                     t_clean = t.title()
                     clean_techniques.append(t_clean)
@@ -415,19 +614,15 @@ class TrendService:
                         tech_ref_seen[t_clean].add(r['paper_id'])
                         tech_ref_map[t_clean].append(paper_ref)
 
-        # --- BƯỚC MỚI: THUẬT TOÁN TOP-K CHO RADAR ---
-        # Chỉ lấy Top 8 Domain phổ biến nhất
         domain_counts_all = Counter(clean_domains)
         top_8_domains = dict(domain_counts_all.most_common(8))
 
-        # Nếu có quá nhiều domain nhỏ, gom vào "Others"
         if len(domain_counts_all) > 8:
             others_count = sum(count for dom, count in domain_counts_all.items() if dom not in top_8_domains)
             top_8_domains["Others"] = others_count
 
         tech_counts = dict(Counter(clean_techniques).most_common(12))
 
-        # --- BƯỚC MỚI: CHUẨN BỊ "THỊT" CHO AI (Exemplar Data) ---
         exemplar_list = []
         for domain in top_8_domains.keys():
             # Lấy 3 bài báo đầu tiên của mỗi domain chính để làm ví dụ
@@ -438,7 +633,6 @@ class TrendService:
         exemplar_str = "\n".join(exemplar_list)
 
         # 3.3. AI Report Generation
-        # Dùng model chuyên biệt cho task TREND (thường là model mạnh để viết report hay)
         lm_synthesis = await get_lm_for_task(LMTask.TREND)
         
         agent = self.create_synthesizer_agent()
@@ -509,7 +703,28 @@ class TrendService:
 
     async def _tag_papers_parallel(self, papers: List[LocalPaperResponse], task_id: str = None):
         """
-        Runs the tagging pipeline in parallel with a concurrency limit.
+        Tag papers in parallel using AI with a concurrency limit.
+
+        This method orchestrates the parallel tagging of papers:
+        1. Checks the cache for existing tags (avoids redundant API calls).
+        2. Calls the AI model for papers not in cache.
+        3. Saves newly extracted tags to the cache.
+        4. Updates progress in the job store for real-time feedback.
+
+        The method uses a semaphore to limit concurrent AI requests based on
+        the configured concurrency limit for the TREND task.
+
+        Args:
+            papers (List[LocalPaperResponse]): List of papers to tag.
+            task_id (str, optional): Task ID for progress updates.
+
+        Returns:
+            List[Dict]: List of successfully tagged papers with extracted metadata.
+                Each dict contains: paper_id, title, pdf_link, domain, task, techniques.
+
+        Note:
+            Failed papers are filtered out from the results. The method logs
+            progress every 10 papers and at milestones (first/last).
         """
         task_prefix = f"[Task {task_id[:8]}] " if task_id else ""
 
@@ -544,7 +759,7 @@ class TrendService:
                         new_progress = int(10 + (completed_count / total * 70))
                         _JOB_STORE[task_id].progress = new_progress
                         _JOB_STORE[task_id].message = f"Analyzing paper {completed_count}/{total}: {paper.title[:50]}..."
-                    
+
                     # Log progress every 10 papers or at milestones
                     if completed_count % 10 == 0 or completed_count in [1, total]:
                         _logger.info(f"⏳ {task_prefix}Tagging progress: {completed_count}/{total} ({completed_count*100//total}%) | Cached: {cached_count}, Failed: {failed_count}")
@@ -582,7 +797,7 @@ class TrendService:
                         new_progress = int(10 + (completed_count / total * 70))
                         _JOB_STORE[task_id].progress = new_progress
                         _JOB_STORE[task_id].message = f"Analyzing paper {completed_count}/{total}: {paper.title[:50]}..."
-                    
+
                     # Log progress every 10 papers or at milestones
                     if completed_count % 10 == 0 or completed_count in [1, total]:
                         _logger.info(f"⏳ {task_prefix}Tagging progress: {completed_count}/{total} ({completed_count*100//total}%) | Cached: {cached_count}, Failed: {failed_count}")
@@ -596,7 +811,7 @@ class TrendService:
                         new_progress = int(10 + (completed_count / total * 70))
                         _JOB_STORE[task_id].progress = new_progress
                         _JOB_STORE[task_id].message = f"Error on paper {completed_count}/{total}: {paper.title[:50]}..."
-                    
+
                     _logger.error(f"❌ {task_prefix}Error tagging paper {paper.paper_id}: {e}")
                     if completed_count % 10 == 0 or completed_count in [1, total]:
                         _logger.info(f"⏳ {task_prefix}Tagging progress: {completed_count}/{total} ({completed_count*100//total}%) | Cached: {cached_count}, Failed: {failed_count}")
@@ -612,9 +827,18 @@ class TrendService:
         _logger.info(f"📊 {task_prefix}Tagging completed: {len(successful_results)}/{total} successful, {cached_count} from cache, {failed_count} failed")
 
         return successful_results
-        
+
     async def get_history(self) -> List[TrendAnalysisResponse]:
-        """Retrieves history of analyses with proper DTO conversion."""
+        """
+        Retrieve all historical trend analyses from the database.
+
+        This method fetches all stored trend analyses and converts them
+        to response DTOs with parsed JSON fields.
+
+        Returns:
+            List[TrendAnalysisResponse]: List of all trend analysis records,
+                ordered by creation date (newest first).
+        """
         records = self.trend_repo.get_all_analyses()
         return [
             TrendAnalysisResponse(
@@ -629,14 +853,42 @@ class TrendService:
                 created_at=r.created_at
             ) for r in records
         ]
-        
+
     def _run_tag_task(self, paper: LocalPaperResponse, lm: dspy.LM):
+        """
+        Execute the AI tagging task for a single paper.
+
+        This internal method runs the DSPy tagger with the specified language model.
+
+        Args:
+            paper (LocalPaperResponse): The paper to tag.
+            lm (dspy.LM): The language model to use for inference.
+
+        Returns:
+            dspy.Prediction: Prediction containing domain, research_task, and techniques.
+        """
         with dspy.context(lm=lm):
             return self.tagger(abstract=paper.summary[:2000])
-        
-    def _run_synthesis_task(self, stats_data: str, exemplar_data: str, time_window: str, 
+
+    def _run_synthesis_task(self, stats_data: str, exemplar_data: str, time_window: str,
                             lm: dspy.LM, synthesizer_agent: TrendSynthesizerAgent, callback=None):
-        
+        """
+        Execute the AI synthesis task to generate the full report.
+
+        This internal method runs the DSPy synthesizer agent with the specified
+        language model and callback for progress updates.
+
+        Args:
+            stats_data (str): JSON string of domain/technique statistics.
+            exemplar_data (str): List of paper titles for evidence.
+            time_window (str): Time range description (e.g., 'Last 7 days').
+            lm (dspy.LM): The language model to use for inference.
+            synthesizer_agent (TrendSynthesizerAgent): The agent for report generation.
+            callback (Callable, optional): Progress callback with (step, total, title).
+
+        Returns:
+            dspy.Prediction: Prediction containing the final report content.
+        """
         with dspy.context(lm=lm):
             return synthesizer_agent(
                 stats_data=stats_data,

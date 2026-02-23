@@ -5,25 +5,29 @@
  */
 
 import React, { useEffect, useState, useRef } from 'react';
-import { 
-    X, Save, Check, Key, Server, Cpu, Loader2, 
-    BrainCircuit, Info, Globe, MessageSquare, 
-    Zap, TrendingUp, Terminal, Box, ShieldCheck,
+import {
+    X, Save, Check, Key, Loader2,
+    BrainCircuit, Info, Globe, MessageSquare,
+    Zap, TrendingUp, Terminal, ShieldCheck,
     Settings2, ChevronRight
 } from 'lucide-react';
 import { useAppStore } from '../../stores/useAppStore';
 import { useLMSettings } from '../../hooks/useLMSettings';
 import { LMSettingUpdate, LMTask } from '../../types/api';
+import geminiIcon from '../../assets/gemini-icon.svg';
+import ollamaIcon from '../../assets/ollama-icon.svg';
+import openaiIcon from '../../assets/openai_icon.svg';
+import openrouterIcon from '../../assets/openrouter-icon.svg';
 
 /**
  * Configuration object for available AI/LM provider options.
  * Each provider includes metadata for UI rendering.
  */
 const PROVIDERS = [
-    { id: 'gemini', label: 'Google Gemini', icon: Cpu, needsKey: true, color: 'text-orange-500', bgColor: 'bg-orange-500/10' },
-    { id: 'openrouter', label: 'OpenRouter', icon: Box, needsKey: true, color: 'text-purple-500', bgColor: 'bg-purple-500/10' },
-    { id: 'ollama', label: 'Ollama (Local)', icon: Server, needsKey: false, color: 'text-gray-500', bgColor: 'bg-gray-500/10' },
-    { id: 'openai', label: 'OpenAI', icon: BrainCircuit, needsKey: true, color: 'text-emerald-500', bgColor: 'bg-emerald-500/10' },
+    { id: 'gemini', label: 'Google Gemini', iconSrc: geminiIcon, needsKey: true, color: 'text-orange-500', bgColor: 'bg-orange-500/10' },
+    { id: 'openrouter', label: 'OpenRouter', iconSrc: openrouterIcon, needsKey: true, color: 'text-purple-500', bgColor: 'bg-purple-500/10' },
+    { id: 'ollama', label: 'Ollama (Local)', iconSrc: ollamaIcon, needsKey: false, color: 'text-gray-500', bgColor: 'bg-gray-500/10' },
+    { id: 'openai', label: 'OpenAI', iconSrc: openaiIcon, needsKey: true, color: 'text-emerald-500', bgColor: 'bg-emerald-500/10' },
 ];
 
 /**
@@ -290,14 +294,14 @@ export const LMSettingsModal: React.FC = () => {
                                                 key={p.id}
                                                 onClick={() => setActiveTab(p.id)}
                                                 className={`w-full flex items-center justify-between p-4 rounded-[1.5rem] transition-all border group ${
-                                                    activeTab === p.id 
-                                                    ? 'bg-blue-600 border-blue-600 text-white shadow-xl shadow-blue-600/25 scale-[1.02]' 
+                                                    activeTab === p.id
+                                                    ? 'bg-blue-600 border-blue-600 text-white shadow-xl shadow-blue-600/25 scale-[1.02]'
                                                     : 'bg-slate-50 dark:bg-slate-800/40 border-slate-100 dark:border-slate-800 hover:border-blue-300 dark:hover:border-blue-800 text-slate-600 dark:text-slate-400'
                                                 }`}
                                             >
                                                 <div className="flex items-center gap-3">
                                                     <div className={`p-2 rounded-xl ${activeTab === p.id ? 'bg-white/20' : 'bg-white dark:bg-slate-900 shadow-sm'} ${activeTab !== p.id ? p.color : 'text-white'}`}>
-                                                        <p.icon size={20} />
+                                                        <img src={p.iconSrc} alt={p.label} className="w-5 h-5 object-contain" />
                                                     </div>
                                                     <span className="font-black text-sm">{p.label}</span>
                                                 </div>
@@ -321,7 +325,7 @@ export const LMSettingsModal: React.FC = () => {
                                     <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
                                         <div className="flex items-center gap-3">
                                             <div className={`p-4 rounded-2xl ${currentProviderDef?.bgColor} ${currentProviderDef?.color}`}>
-                                                {currentProviderDef && <currentProviderDef.icon size={28} />}
+                                                {currentProviderDef && <img src={currentProviderDef.iconSrc} alt={currentProviderDef.label} className="w-7 h-7 object-contain" />}
                                             </div>
                                             <div>
                                                 <h4 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">

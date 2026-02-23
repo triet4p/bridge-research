@@ -7,14 +7,23 @@ from sqlmodel import SQLModel, create_engine, Session
 from src.core.config import settings
 
 # Create the SQLite engine.
-# check_same_thread=False is required for SQLite when accessed by 
+# check_same_thread=False is required for SQLite when accessed by
 # multiple threads in a FastAPI application (e.g., Uvicorn workers).
 engine = create_engine(
     settings.DATABASE_URL,
     connect_args={"check_same_thread": False}
 )
-""" 
-SQLite Engine, available for multiple threads
+"""
+SQLite database engine for connection management.
+
+This engine is configured with `check_same_thread=False` to allow
+multiple threads (Uvicorn workers) to access the database safely.
+The engine manages connection pooling and SQL execution.
+
+Note:
+    SQLite is file-based, so concurrent write operations are serialized
+    internally by SQLite. For production workloads with high concurrency,
+    consider migrating to PostgreSQL or another client-server database.
 """
 
 def init_db():

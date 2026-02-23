@@ -9,6 +9,7 @@ if sys.stdout: sys.stdout.reconfigure(encoding='utf-8', line_buffering=True)
 if sys.stderr: sys.stderr.reconfigure(encoding='utf-8', line_buffering=True)
 
 from src.core.config import settings
+import src.core.constants as constants
 from src.core.lifecycle import app_lifespan
 from src.core.logger import get_logger
 from src.core.middleware import setup_interaction_tracking_middleware
@@ -27,8 +28,15 @@ app = FastAPI(
 )
 
 app.state.system_state = SystemState()
-app.state.arxiv_api_state = ArxivAPIState()
-app.state.watchdog = SidecarWatchdog(timeout_seconds=45, check_interval_seconds=5.0)
+app.state.arxiv_api_state = ArxivAPIState(
+    user_agents=constants.ARXIV_USER_AGENTS,
+    max_wait_time_seconds=settings.ARXIV_MAX_WAIT_TIME_SECONDS,
+    http_timeout_seconds=settings.ARXIV_HTTP_TIMEOUT_SECONDS,
+    http_max_connections=settings.ARXIV_HTTP_MAX_CONNECTIONS,
+    http_max_keepalive_connections=settings.ARXIV_HTTP_MAX_KEEPALIVE_CONNECTIONS
+)
+app.state.watchdog = SidecarWatchdog(timeout_seconds=settings.WATCHDOG_TIMEOUT_SECONDS,
+                                      check_interval_seconds=settings.WATCHDOG_CHECK_INTERVAL_SECONDS)
 
 app.add_middleware(
     CORSMiddleware,

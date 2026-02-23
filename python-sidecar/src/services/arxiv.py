@@ -8,7 +8,6 @@ This module handles:
 - Checking against the local repository to mark papers as 'saved'.
 """
 
-import asyncio
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from typing import List, Set
@@ -99,6 +98,15 @@ class ArxivService:
     ) -> List[LocalPaperResponse]:
         """
         Fetches papers for Trend Radar using flexible filters.
+        
+        Args:
+            days (int): Number of past days to look back for papers.
+            query (str): Keyword search (title, abstract, authors).
+            categories (List[str] | None): List of ArXiv categories (e.g., ['cs.AI', 'cs.CV']).
+            max_results (int): Maximum number of results to return.
+        
+        Returns:
+            List[LocalPaperResponse]: A list of paper DTOs, with local status (is_saved) populated.
         """
         # 1. Tính toán khoảng thời gian
         end_dt = datetime.now(timezone.utc)

@@ -1,8 +1,23 @@
+/**
+ * @file StartupOverlay.tsx
+ * @description Full-screen loading overlay displayed during application initialization.
+ *
+ * This component shows a visually appealing startup screen with:
+ * - Animated loading messages
+ * - Progress indicator with rotating messages
+ * - Connection error state with restart option
+ * - Smooth fade-out transition when ready
+ */
+
 import React, { useEffect, useState } from 'react';
 import { useAppStore } from '../../stores/useAppStore';
 import { Cpu, Globe, Database, AlertCircle, Sparkles } from 'lucide-react';
 import logoImg from '../../assets/logo.png';
 
+/**
+ * Rotating loading messages displayed during startup.
+ * Each message is shown for 2.5 seconds before cycling to the next.
+ */
 const LOADING_MESSAGES = [
     "Waking up the AI Brain...",
     "Connecting to local knowledge base...",
@@ -11,15 +26,46 @@ const LOADING_MESSAGES = [
     "Optimizing Research Radar...",
 ];
 
+/**
+ * Props for the StartupOverlay component.
+ */
 interface Props {
+    /**
+     * Flag indicating if the user can enter the main application.
+     * When true, the overlay begins its fade-out transition.
+     */
     canEnter: boolean;
 }
 
+/**
+ * StartupOverlay component displays a full-screen loading overlay during app initialization.
+ *
+ * This component manages:
+ * - Rotating loading messages every 2.5 seconds
+ * - Smooth fade-out animation when the app is ready
+ * - Connection error state with a restart button
+ * - Background decoration with animated gradient orbs
+ *
+ * @param props - Component props
+ * @param props.canEnter - Flag indicating if the user can enter the main app
+ *
+ * @returns The startup overlay JSX, or null if the transition is complete
+ *
+ * @example
+ * ```tsx
+ * // In App.tsx
+ * <StartupOverlay canEnter={isBackendReady && minDisplayTimeReached} />
+ * ```
+ */
 export const StartupOverlay: React.FC<Props> = ({ canEnter }) => {
     const { connectionError } = useAppStore();
     const [messageIndex, setMessageIndex] = useState(0);
     const [shouldRender, setShouldRender] = useState(true);
 
+    /**
+     * Effect to rotate loading messages every 2.5 seconds.
+     * Only active when the app is not ready to enter.
+     */
     useEffect(() => {
         if (canEnter) return;
         const interval = setInterval(() => {
@@ -28,6 +74,10 @@ export const StartupOverlay: React.FC<Props> = ({ canEnter }) => {
         return () => clearInterval(interval);
     }, [canEnter]);
 
+    /**
+     * Effect to handle the fade-out transition when the app is ready.
+     * Waits 1.1 seconds before removing the overlay from the DOM.
+     */
     useEffect(() => {
         if (canEnter) {
             const timer = setTimeout(() => setShouldRender(false), 1100);
@@ -50,10 +100,10 @@ export const StartupOverlay: React.FC<Props> = ({ canEnter }) => {
             <div className="relative flex flex-col items-center max-w-sm w-full px-8">
                 <div className="mb-8 relative">
                     <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-2xl animate-bounce duration-[2000ms]">
-                        <img 
-                            src={logoImg} 
-                            alt="Bridge Research Logo" 
-                            className="w-12 h-12 object-contain" 
+                        <img
+                            src={logoImg}
+                            alt="Bridge Research Logo"
+                            className="w-12 h-12 object-contain"
                         />
                     </div>
                     <div className="absolute -top-2 -right-2">

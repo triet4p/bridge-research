@@ -1,82 +1,89 @@
 # 🌉 Bridge Research App
 
 > **From Paper to Practice.**  
-> A Research Assistant that bridges the gap between Academic Research and Engineering Implementation.
+> A professional AI Research Assistant that bridges the gap between academic theory and engineering reality.
 
 ![Banner](./assets/repo-banner.png)
 
 ## 📖 Introduction
 
-In the rapidly evolving landscape of AI and Data Science, staying updated with ArXiv papers is crucial. However, simply reading abstract is not enough. Engineers and CTOs need to know:
-*   "Can I implement this?"
-*   "Is there code available?"
-*   "What is the computational cost?"
+In the lightning-fast world of AI and Data Science, keeping up with ArXiv is a full-time job. Reading abstracts isn't enough for engineers and CTOs who need to know:
+*   "Is this actually implementable?"
+*   "What are the hidden hardware costs?"
+*   "Where is the source code?"
 
-**Bridge Research App** helps you answer these questions. It is a desktop application designed to search, filter, analyze, and "bridge" the knowledge from papers to practical solutions.
+**Bridge Research App** is a high-performance desktop application designed to help you cut through the noise. It doesn't just find papers; it analyzes them, tracks global trends, and provides actionable intelligence for your next project.
+
+---
 
 ## ✨ Key Features
 
-*   **🔍 Advanced ArXiv Search:**
-    *   Smart query builder (e.g., `all:LLM AND cat:cs.AI`).
-    *   Filter by **Date Range** and **Topics** (AI, CV, NLP, etc.).
-    *   Configurable result limits (1-100) for fine-grained control.
-*   **📚 Local Library & Persistence:**
-    *   Save papers to local SQLite database with metadata and PDFs.
-    *   Dedicated Library view to manage saved papers with Read/Unread status.
-    *   Auto-save papers when starting analysis sessions.
-*   **🤖 Deep Analysis & Chat (RAG):**
-    *   **Vectorless Reasoning RAG Engine:** Novel 2-step reasoning using DSPy (Selector → Reader).
-    *   **Smart PDF Parsing:** Automatic Table of Contents (ToC) extraction and reconstruction from PDFs.
-    *   **Structure Viewer:** Interactive ToC sidebar showing paper layout and content previews.
-    *   **Context-Aware Chat:** AI understands conversation history and resolves references.
-    *   **Rich Markdown Support:** Renders tables (GFM) and LaTeX formulas (KaTeX) beautifully.
-*   **⚙️ AI Configuration:**
-    *   **Secure Storage:** API keys stored in OS Keyring (Windows Credential Manager).
-    *   **Multi-Provider Support:** Google Gemini, OpenRouter, OpenAI, Ollama (OpenAI-compatible).
-    *   **Dynamic Model Switching:** Instantly switch between providers without restarting.
-*   **⚡ Hybrid Performance:**
-    *   Built with **Tauri v2** (Rust) for a lightweight footprint.
-    *   Powered by a **Python FastAPI Sidecar** for robust data processing and AI analysis.
-*   **🌐 Native Experience:**
-    *   Opens PDFs and Links in your default browser (Chrome/Edge).
-    *   Auto-detects GitHub/HuggingFace links in abstracts.
-    *   Multi-language support (English / Vietnamese).
-*   **🛡️ Local-First:**
-    *   No login required.
-    *   All data processing happens locally with no external dependencies.
+### 🔍 Precision ArXiv Discovery
+*   **Smart Search:** Find exactly what you need with advanced filters for specific AI domains, date ranges, and complex keyword queries.
+*   **Instant Previews:** Skim through abstracts and metadata without ever leaving the app or opening a browser tab.
 
-## 📥 Installation (For Users)
+### 📚 Personal Research Library
+*   **Local Persistence:** Save important papers to your own local database. Your research stays with you, offline and organized.
+*   **Auto-Managed PDFs:** One-click downloads and automatic file organization. Never hunt through your 'Downloads' folder for a paper again.
 
-We offer two ways to use Bridge Research App on Windows:
+### 🤖 Interactive "Talk-to-Paper" RAG
+*   **Deep Reasoning Chat:** Don't just read—ask. Query specific sections, tables, or formulas. The AI understands the context of the entire PDF.
+*   **Smart Document Navigation:** View a reconstructed Table of Contents and jump directly to the most relevant sections of any complex paper.
+*   **Rich Mathematical Rendering:** Complex formulas and technical tables are rendered beautifully in high-fidelity Markdown and LaTeX.
 
-### Option 1: Installer (Recommended)
+### 📈 Real-time Trend Radar
+*   **Bird's-eye View:** Analyze up to 500 papers at once to visualize which research domains are exploding and which are cooling down.
+*   **Interactive Intelligence:** Click on any trend or technical keyword to instantly see the specific papers driving that movement.
+*   **Technical Keyword Tracking:** Stay ahead of the curve by identifying emerging techniques (like LoRA, MoE, or RAG) before they become mainstream.
+
+### 🧠 Agentic Intelligence Reporting
+*   **Professional Synthesis:** Our AI Agent doesn't just summarize; it writes multi-page, structured intelligence reports complete with executive summaries and implementation roadmaps.
+*   **Evidence-Based Insights:** Every claim in the report is backed by citations from the latest papers, providing a verifiable "Bridge" to implementation.
+
+### ⚙️ Tailored AI Orchestration
+*   **Task-Specific Routing:** Assign different AI models to different jobs. Use fast models for summaries and high-reasoning models for deep research.
+*   **Privacy & Flexibility:** Support for both high-end cloud providers (Gemini, OpenAI, Claude) and fully local models (Ollama) to keep your data private.
+
+---
+
+## ⚡ User Experience & Performance
+
+*   **Instant-On Interface:** Experience a zero-lag startup. The UI is ready for you to browse your library while the heavy AI engines warm up in the background.
+*   **Professional Desktop Feel:** A sleek, dark-mode optimized interface with smooth animations and real-time progress tracking for long-running analysis tasks.
+*   **Rock-Solid Stability:** Built-in protection against API rate limits and connection issues ensures your research workflow is never interrupted.
+
+---
+
+## 📥 Installation (Windows)
+
+### For users
 1.  Go to the **[Releases Page](https://github.com/triet4p/bridge-research/releases)**.
 2.  Download the latest `Bridge Research_x.x.x_x64-setup.exe`.
 3.  Run the installer. The app will be available in your **Start Menu**.
 
-### Option 2: Portable
-1.  Go to the **[Releases Page](https://github.com/triet4p/bridge-research/releases)**.
-2.  Download the zip file or executable (if available).
-3.  *Note: For the best experience and auto-updates, please use the Installer.*
+### For developers
+See [Developer Start Guide](./docs/dev-install-guide.md)
 
-## 💻 Setup for Developers
-
-If you want to contribute or build the app from source, please follow our detailed guide:
-
-👉 **[Developer Installation Instructions](docs/dev-install-instruction.md)**
+---
 
 ## 🛠️ Tech Stack
 
-*   **Core:** Tauri v2 (Rust)
-*   **Frontend:** React 19, TypeScript, Tailwind CSS, Zustand, TanStack Query.
-*   **Backend (Sidecar):** Python 3.11+, FastAPI, SQLModel (SQLite), UV (Package Manager).
-*   **Build System:** NSIS (Windows Installer), PyInstaller.
+*   **Frontend:** React 19, TypeScript, Tailwind CSS, Zustand, TanStack Query, Recharts.
+*   **Core:** Tauri v2 (Rust).
+*   **Backend (Sidecar):** Python 3.11+, FastAPI, DSPy (Agentic Framework), SQLModel (SQLite).
+*   **Build System:** NSIS, PyInstaller, UV.
+
+---
 
 ## 🗺️ Roadmap
 
-*   [x] **Phase 1 (v0.1.0):** Foundation, ArXiv Search, Hybrid Architecture.
-*   [x] **Phase 2 (v0.2.0):** Local Database (Save papers), Deep Analysis with LLMs (Gemini/Ollama).
-*   [ ] **Phase 3:** Github Code Inspector & Feasibility Scoring.
+*   [x] **Phase 1:** Hybrid Architecture & ArXiv Integration.
+*   [x] **Phase 2:** Local Library & Deep Document Chat (RAG).
+*   [x] **Phase 3:** Trend Radar & Agentic Reporting Workflow.
+*   [ ] **Phase 4:** Github Code Inspector (Tech-stack & License Analysis).
+*   [ ] **Phase 5:** Feasibility Scorer (Implementation Difficulty & Hardware Estimator).
+
+---
 
 ## 📄 License
 

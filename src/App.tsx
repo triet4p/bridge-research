@@ -1,3 +1,18 @@
+/**
+ * @file App.tsx
+ * @description Main application component for the Bridge Research App.
+ *
+ * This component orchestrates the entire application lifecycle, including:
+ * - Sidecar backend initialization and handshake
+ * - Global state management (dark mode, backend status, connection errors)
+ * - Paper search and library views with filtering
+ * - Modal components for settings and chat
+ *
+ * The app uses a two-phase startup sequence:
+ * 1. UI rendering with minimum display time (5s) for smooth UX
+ * 2. Backend sidecar startup with health check polling
+ */
+
 import { useEffect, useRef } from 'react';
 import { useAppStore, hasActiveOperations } from './stores/useAppStore';
 import { useSearchPapers, useLibrary } from './hooks/usePapers';
@@ -8,18 +23,30 @@ import { apiClient } from './lib/axios';
 import { useLibraryFilter } from './hooks/useLibraryFilter';
 import { LMSettingsModal } from './components/settings/LMSettingsModal';
 import { ChatModal } from './components/chat/ChatModal';
-import { TrendDashboard } from './components/trends/TrendDashboard'; 
+import { TrendDashboard } from './components/trends/TrendDashboard';
 import { StartupOverlay } from './components/layout/StartupOverlay';
-import { invoke } from '@tauri-apps/api/core'; // 👈 Import invoke
+import { invoke } from '@tauri-apps/api/core';
 
+/**
+ * Main application component.
+ *
+ * @description
+ * This is the root component that manages:
+ * - Application initialization and sidecar lifecycle
+ * - View routing between search, library, and trends
+ * - Connection health monitoring with retry logic
+ * - Dark mode theme toggling
+ *
+ * @returns The main application JSX structure
+ */
 function App() {
-  const { 
-    isDarkMode, searchQuery, currentView, t, 
-    isBackendReady, setBackendReady, 
+  const {
+    isDarkMode, searchQuery, currentView, t,
+    isBackendReady, setBackendReady,
     minDisplayTimeReached, setMinDisplayTimeReached,
-    setConnectionError 
+    setConnectionError
   } = useAppStore();
-  
+
   const searchResult = useSearchPapers();
   const libraryResult = useLibrary();
   const filteredLibrary = useLibraryFilter(libraryResult.data, searchQuery);
@@ -28,12 +55,20 @@ function App() {
 
   const retryCountRef = useRef(0);
 
-  // ===== 1. Khởi tạo UI & Ra lệnh bật Backend =====
+  /**
+   * Phase 1: Initialize UI and trigger sidecar startup.
+   *
+   * This effect handles the two-timer startup sequence:
+   * - Display timer (5s): Ensures minimum UI display time for smooth UX
+   * - Sidecar timer (2s): Waits for UI to render before starting the Python sidecar
+   *
+   * The sidecar is started via Tauri's invoke command to the Rust backend.
+   */
   useEffect(() => {
-    // Đợi 5s cho thời gian hiển thị tối thiểu (UX)
+    // Wait 5s for minimum display time (UX)
     const displayTimer = setTimeout(() => setMinDisplayTimeReached(true), 5000);
 
-    // Đợi 2s cho UI render xong mượt mà rồi mới bật Backend
+    // Wait 2s for UI to render smoothly, then start the backend
     const sidecarTimer = setTimeout(async () => {
       try {
         console.log("[System] Requesting Rust to start Sidecar...");
@@ -49,7 +84,18 @@ function App() {
     };
   }, [setMinDisplayTimeReached]);
 
-  // ===== 2. Handshake với Backend (Ping mỗi 1.5s cho đến khi sống) =====
+  /**
+   * Phase 2: Handshake with backend via health check polling.
+   *
+   * This effect polls the backend health endpoint every 1.5s (or 8s when ready)
+   * until a successful connection is established. It implements retry logic
+   * with a timeout threshold (50 attempts ≈ 75s) before showing an error.
+   *
+   * @remarks
+   * - Skips health checks if there are active operations (to avoid noise)
+   * - Uses a 3s timeout for health requests
+   * - Adjusts polling frequency based on backend readiness
+   */
   useEffect(() => {
     const checkConnection = async () => {
       if (hasActiveOperations()) return;
@@ -62,8 +108,8 @@ function App() {
       } catch (e) {
         if (!isBackendReady) {
           retryCountRef.current += 1;
-          // Tăng ngưỡng đợi lên vì Sidecar khởi động sau 2 giây
-          if (retryCountRef.current >= 50) { 
+          // Increase threshold since sidecar starts after 2 seconds
+          if (retryCountRef.current >= 50) {
             setConnectionError("Sidecar connection timeout. Check port 14201.");
           }
         }
@@ -73,6 +119,12 @@ function App() {
     return () => clearInterval(interval);
   }, [isBackendReady, setBackendReady, setConnectionError]);
 
+  /**
+   * Toggle dark mode class on the document root element.
+   *
+   * This effect applies the 'dark' class to the <html> element
+   * when dark mode is enabled, enabling Tailwind's dark mode variants.
+   */
   useEffect(() => {
     document.documentElement.classList.toggle('dark', isDarkMode);
   }, [isDarkMode]);
@@ -81,7 +133,7 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-950 transition-colors duration-300">
-      
+
       <StartupOverlay canEnter={canEnterApp} />
 
       {canEnterApp ? (

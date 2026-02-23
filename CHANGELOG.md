@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-02-23
+
+### 🚀 Release Note: "The Intelligence Orchestrator Update"
+This major release evolves Bridge Research into a professional AI Research Intelligence platform. It introduces the **Trend Radar Engine** for large-scale analysis, a sophisticated **Agentic Workflow** for deep reporting, and a modernized **Lazy-Bootstrapping** architecture for superior desktop performance.
+
+### ✨ Added
+- **📈 Trend Radar Dashboard:**
+    - **Bulk Acquisition:** Fetch and analyze up to 500 papers simultaneously with flexible filters.
+    - **Interactive Radar Chart:** Multi-axis visualization of research domains with clickable axes.
+    - **Traceability System:** Direct mapping from trends to source papers via the new `ReferencePanel`.
+    - **Hot Techniques Cloud:** Real-time extraction and frequency tracking of emerging technical keywords.
+- **🤖 Agentic Synthesis Engine:**
+    - **Planner-Worker Architecture:** Implemented a `dspy.Module` based Agent that dynamically plans report structures.
+    - **Multi-stage Generation:** Overcomes SLM limits by generating long-form reports (1500+ words) section-by-section.
+    - **Contextual Memory:** Sequential writing logic that prevents repetition and ensures report coherence.
+- **⚙️ Specialized AI Routing:**
+    - **Task-Specific Models:** Assign different providers/models to `CHAT`, `SUMMARY`, `TREND`, and `CODE` tasks.
+    - **Dynamic Concurrency:** Per-provider `concurrency_limit` configuration with `asyncio.Semaphore` throttling.
+    - **LM Pool Management:** Automated lifecycle and caching of multiple active Language Model instances.
+- **📡 Real-time Observability:**
+    - **SSE Progress Streaming:** Replaced Polling with Server-Sent Events for smooth, real-time progress tracking (1% to 100%).
+    - **Integrated Logging:** Python sidecar logs are now streamed directly to the Frontend Developer Console.
+
+### 🛠 Changed
+- **Backend Modernization:**
+    - **Fully Async API:** Converted all endpoints to `async def` for high-concurrency performance.
+    - **Thread-safe Inference:** Moved blocking DSPy/LLM calls to background threads using `asyncio.to_thread`.
+    - **Robust Parsing:** Integrated `json_repair` and `BestOfN` (N=5) to handle unstable outputs from small models.
+- **Startup & UX:**
+    - **Lazy Bootstrapping:** UI renders immediately while the Sidecar initializes in the background after a 2s delay.
+    - **Startup Overlay:** Professional splash screen with animated branding and real-time handshake status.
+    - **ArXiv Stability:** Implemented Global Throttling (3.5s delay) and Browser Identity Spoofing to eliminate 429 errors.
+
+### 🔧 Fixed
+- **Scroll Restoration:** Resolved critical CSS conflicts and Overlay Z-index issues that blocked application scrolling.
+- **Contrast & Theme:** Fixed "Black-on-Black" text issues in AI Reports and Settings Modal for a perfect Dark Mode experience.
+- **Smart Watchdog:** Updated shutdown logic to track active background tasks, preventing premature sidecar termination during AI inference.
+- **Data Integrity:** Fixed inconsistencies between trend counts and reference lists using unique ID tracking.
+
+---
+
 ## [0.2.0] - 2026-01-25
 
 ### 🚀 Release Note: "The Deep Read Update"

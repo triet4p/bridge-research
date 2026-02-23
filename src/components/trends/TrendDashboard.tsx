@@ -1,3 +1,16 @@
+/**
+ * @file TrendDashboard.tsx
+ * @description Main dashboard component for the Trend Radar feature.
+ *
+ * This component provides the complete UI for AI-powered trend analysis:
+ * - Configuration controls (time window, paper count, categories)
+ * - Real-time progress tracking during analysis
+ * - Interactive radar chart for domain distribution
+ * - Hot techniques section with clickable filters
+ * - AI-generated intelligence report in Markdown
+ * - Reference panel for exploring cited papers
+ */
+
 import React, { useState } from 'react';
 import { useTrends } from '../../hooks/useTrends';
 import { TrendRadarChart } from './TrendRadarChart';
@@ -7,16 +20,34 @@ import { Loader2, Sparkles, Zap, BarChart3 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+/**
+ * TrendDashboard component displays the complete Trend Radar interface.
+ *
+ * Features:
+ * - **Header Card**: Configuration controls for analysis parameters
+ * - **Progress View**: Real-time status updates during AI processing
+ * - **Results View**: Radar chart, techniques, references, and AI report
+ *
+ * The component manages two viewing states:
+ * 1. Processing: Shows progress bar with status messages
+ * 2. Complete: Displays full analysis results with interactive elements
+ *
+ * @returns The TrendDashboard JSX
+ */
 export const TrendDashboard: React.FC = () => {
     const { filters } = useAppStore();
     const { historyQuery, startMutation, statusData, activeTrendTaskId, resetPolling } = useTrends();
-    
-    // State để theo dõi người dùng đang xem tham chiếu của chủ đề nào
+
+    // State to track which category's references the user is viewing
     const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
     const [selectedReferenceType, setSelectedReferenceType] = useState<'domain' | 'technique' | null>(null);
     const [days, setDays] = useState(7);
     const [maxPapers, setMaxPapers] = useState(150);
 
+    /**
+     * Initiates a new trend analysis with current parameters.
+     * Resets any previous task state before starting a new one.
+     */
     const handleGenerate = () => {
         // Reset previous state
         resetPolling();
@@ -27,6 +58,12 @@ export const TrendDashboard: React.FC = () => {
         });
     };
 
+    /**
+     * Handles click on a domain axis in the radar chart.
+     * Toggles the reference panel for the selected domain.
+     *
+     * @param domain - The domain name that was clicked
+     */
     const handleDomainAxisClick = (domain: string) => {
         if (selectedReferenceType === 'domain' && selectedCategory === domain) {
             setSelectedCategory(null);
@@ -37,6 +74,12 @@ export const TrendDashboard: React.FC = () => {
         setSelectedReferenceType('domain');
     };
 
+    /**
+     * Handles click on a technique in the Hot Techniques section.
+     * Toggles the reference panel for the selected technique.
+     *
+     * @param technique - The technique name that was clicked
+     */
     const handleTechniqueClick = (technique: string) => {
         if (selectedReferenceType === 'technique' && selectedCategory === technique) {
             setSelectedCategory(null);

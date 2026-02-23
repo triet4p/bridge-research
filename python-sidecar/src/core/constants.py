@@ -27,5 +27,3 @@ ARXIV_USER_AGENTS = [
 A list of common User-Agent strings to use when making requests to the ArXiv API, 
 helping to mimic typical browser behavior and avoid potential blocking.
 """
-
-ARXIV_MAX_WAIT_TIME_SECONDS = 3.5

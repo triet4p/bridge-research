@@ -179,39 +179,85 @@ export interface LMSettingUpdate {
 }
 
 export interface TrendPaperReference {
+    /** Unique identifier of the referenced paper (ArXiv ID). */
     id: string;
+    /** Title of the referenced paper. */
     title: string;
 }
 
+/**
+ * Represents the complete result of a Trend Radar analysis session.
+ *
+ * This interface contains statistical aggregations, reference paper mappings,
+ * and the AI-generated markdown report for AI research trends.
+ */
 export interface TrendAnalysis {
+    /** Unique identifier of the analysis record. */
     id: number;
+    /** Time window in days for the analysis (e.g., 7, 30). */
     time_window_days: number;
+    /** Total number of papers analyzed. */
     paper_count: number;
+    /** Distribution of papers by domain (e.g., { "NLP": 45, "CV": 30 }). */
     domain_distribution: Record<string, number>;
+    /** Count of top techniques mentioned (e.g., { "LoRA": 15, "RAG": 12 }). */
     top_techniques: Record<string, number>;
+    /** Reference papers grouped by domain for evidence-based citations. */
     domain_references: Record<string, TrendPaperReference[]>;
+    /** Reference papers grouped by technique for evidence-based citations. */
     technique_references: Record<string, TrendPaperReference[]>;
+    /** The full AI-generated report in Markdown format. */
     report_markdown: string;
+    /** ISO 8601 timestamp when the analysis was created. */
     created_at: string;
 }
 
+/**
+ * Request payload for generating a trend analysis report.
+ *
+ * This interface defines the parameters for customizing the trend analysis,
+ * including time window, search filters, and paper limits.
+ */
 export interface TrendGenerateRequest {
+    /** Time window in days for the analysis (1-30). */
     days: number;
+    /** Optional keyword filter for paper search. */
     query?: string;
+    /** List of ArXiv category codes to search (e.g., ["cs.AI", "cs.LG"]). */
     categories: string[];
+    /** Maximum number of papers to analyze (10-500). */
     max_papers: number;
 }
 
+/**
+ * Response for initiating an async trend generation task.
+ *
+ * This response contains a task ID that can be used to poll for progress updates.
+ */
 export interface TrendTaskResponse {
+    /** Unique identifier for the background task. */
     task_id: string;
+    /** Status message confirming task initiation. */
     message: string;
 }
 
+/**
+ * Response for polling the status of an async trend generation task.
+ *
+ * This interface provides real-time progress updates during report generation,
+ * including status, progress percentage, and the final result when complete.
+ */
 export interface TrendStatusResponse {
+    /** Unique identifier for the background task. */
     task_id: string;
+    /** Current task status. */
     status: 'pending' | 'processing' | 'completed' | 'failed';
-    progress: number;  // 0-100
-    message: string;   // e.g. "Fetching from ArXiv...", "Tagging 10/50..."
+    /** Progress percentage (0-100). */
+    progress: number;
+    /** Human-readable status message (e.g., "Fetching from ArXiv...", "Tagging 10/50..."). */
+    message: string;
+    /** The final analysis result when status is 'completed'. */
     result?: TrendAnalysis;
+    /** Error message if status is 'failed'. */
     error?: string;
 }

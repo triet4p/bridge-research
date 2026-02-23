@@ -1,14 +1,56 @@
+/**
+ * @file ReferencePanel.tsx
+ * @description Slide-in panel displaying reference papers for a selected category.
+ *
+ * This component shows a list of paper references when a user clicks on:
+ * - A domain axis in the radar chart
+ * - A technique in the Hot Techniques section
+ *
+ * Features:
+ * - Animated slide-in entrance
+ * - Clickable papers that open in ArXiv
+ * - Scrollable list with custom scrollbar styling
+ */
+
 import React from 'react';
 import { ExternalLink, FileText, X } from 'lucide-react';
 import { TrendPaperReference } from '../../types/api';
 import { openExternal } from '../../utils/openLink';
 
+/**
+ * Props for the ReferencePanel component.
+ */
 interface Props {
+    /** The selected category name (domain or technique). */
     category: string;
+    /** Array of paper references for the selected category. */
     papers: TrendPaperReference[];
+    /** Callback fired when the panel is closed. */
     onClose: () => void;
 }
 
+/**
+ * ReferencePanel component displays a list of reference papers for a category.
+ *
+ * This panel slides in from the right when a user clicks on a domain or technique.
+ * Each paper is clickable and opens the ArXiv abstract page in an external browser.
+ *
+ * @param props - Component props
+ * @param props.category - The selected category name
+ * @param props.papers - List of paper references
+ * @param props.onClose - Callback to close the panel
+ *
+ * @returns The ReferencePanel JSX
+ *
+ * @example
+ * ```tsx
+ * <ReferencePanel
+ *   category="NLP"
+ *   papers={[{ id: "2401.00001", title: "Attention Is All You Need" }]}
+ *   onClose={() => setSelectedCategory(null)}
+ * />
+ * ```
+ */
 export const ReferencePanel: React.FC<Props> = ({ category, papers, onClose }) => {
     const openPaper = (paperId: string) => {
         openExternal(`https://arxiv.org/abs/${paperId}`);
@@ -28,7 +70,7 @@ export const ReferencePanel: React.FC<Props> = ({ category, papers, onClose }) =
             <div className="p-4 max-h-[400px] overflow-y-auto custom-scrollbar">
                 <div className="space-y-3">
                     {papers.map((paper, idx) => (
-                        <div 
+                        <div
                             key={idx}
                             onClick={() => openPaper(paper.id)}
                             className="p-3 bg-slate-50 dark:bg-slate-800/50 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-slate-100 dark:border-slate-800 rounded-xl transition-all cursor-pointer group"

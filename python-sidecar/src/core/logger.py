@@ -36,7 +36,12 @@ def get_logger(
         log_id (str): A unique identifier for the logger (usually the module name).
 
     Returns:
-        logging.Logger: The configured logger instance.
+        logging.Logger: The configured logger instance with handlers set up
+            according to the application settings (console, file, or both).
+
+    Note:
+        Loggers are cached to prevent recreating handlers with the same ID.
+        If a logger with the given ID already exists, it is returned directly.
     """
     global _LOGGER_CACHE
     

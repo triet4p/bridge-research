@@ -16,7 +16,7 @@ router = APIRouter()
 
 @router.get("/search", response_model=List[LocalPaperResponse])
 async def search_papers(
-    service: ArxivServiceDep, # <-- Tự động inject ArxivService (đã có repo bên trong)
+    service: ArxivServiceDep, 
     query: str | None = Query(None),
     categories: List[str] = Query(default=[]),
     limit: int = 20,

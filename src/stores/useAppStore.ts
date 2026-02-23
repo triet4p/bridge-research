@@ -28,8 +28,8 @@ interface AppState {
     isDarkMode: boolean;
     /** The currently selected UI language ('en' or 'vi'). */
     language: 'en' | 'vi';
-    /** 
-     * The translation object for the current language. 
+    /**
+     * The translation object for the current language.
      * This is a convenience accessor to avoid getting the language and then the dictionary separately.
      */
     t: typeof TRANSLATIONS['en'];
@@ -40,15 +40,19 @@ interface AppState {
     /** Flag indicating if the frontend has successfully connected to the backend sidecar. */
     isBackendReady: boolean;
 
+    /** Flag indicating if the application is in the initial boot/loading phase. */
     isBooting: boolean;
+    /** Error message if the backend connection fails, or null if connected. */
     connectionError: string | null;
 
-    /** Track active operations to conditionally skip health checks */
+    /** Track active operations to conditionally skip health checks. */
     activeOperations: Set<string>;
+    /** The task ID of the active trend generation job, or null if none is running. */
     activeTrendTaskId: string | null;
 
+    /** Flag indicating if the minimum display time (5s) has been reached for smooth UX. */
     minDisplayTimeReached: boolean;
-    
+
     // --- Actions ---
     /** Updates the search query string. */
     setSearchQuery: (query: string) => void;
@@ -59,22 +63,26 @@ interface AppState {
     /** Sets the application language and updates the translation dictionary `t`. */
     setLanguage: (lang: 'en' | 'vi') => void;
     /** Switches the main view between 'search' and 'library'. */
-    setView: (view: ViewMode) => void; 
+    setView: (view: ViewMode) => void;
     /** Opens the AI Settings modal. */
     openSettings: () => void;
     /** Closes the AI Settings modal. */
     closeSettings: () => void;
     /** Sets the connection status of the backend. */
     setBackendReady: (status: boolean) => void;
+    /** Sets the backend connection error message, or null to clear the error. */
     setConnectionError: (error: string | null) => void;
+    /** Marks the boot phase as complete. */
     finishBooting: () => void;
-    /** Register an active operation */
+    /** Register an active operation to prevent health check noise. */
     addOperation: (id: string) => void;
-    /** Remove a completed operation */
+    /** Remove a completed operation from the active set. */
     removeOperation: (id: string) => void;
 
+    /** Sets the active trend generation task ID, or null to clear. */
     setActiveTrendTaskId: (id: string | null) => void;
 
+    /** Sets whether the minimum display time has been reached. */
     setMinDisplayTimeReached: (status: boolean) => void;
 }
 

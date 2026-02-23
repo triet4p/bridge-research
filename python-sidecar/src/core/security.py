@@ -11,7 +11,7 @@ import keyring
 from src.core.logger import get_logger
 from src.core.config import settings
 
-_logger = get_logger('[PythonSidebar - Core Security]')
+_logger = get_logger('[PythonSidecar - Core Security]')
 
 class KeyringManager:
     """
