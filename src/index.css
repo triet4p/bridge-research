@@ -1,29 +1,24 @@
-/* src/index.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   html, body {
-    /* Ngăn chặn hành vi kéo nảy (elastic scrolling) của Webview */
-    overscroll-behavior: none;
-    /* Set màu nền trùng với theme để che khuyết điểm */
-    @apply bg-gray-50 dark:bg-slate-950 antialiased;
+    margin: 0;
+    padding: 0;
+    @apply bg-slate-950 antialiased;
   }
 }
 
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-}
+/* Custom Scrollbar */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { @apply bg-slate-800 rounded-full; }
 
-.custom-scrollbar::-webkit-scrollbar-track {
-  @apply bg-transparent;
+@keyframes infinite-scroll {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
 }
-
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  @apply bg-gray-300 dark:bg-slate-700 rounded-full;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  @apply bg-gray-400 dark:bg-slate-600;
+.animate-infinite-scroll {
+  animation: infinite-scroll 1.5s linear infinite;
 }

@@ -39,9 +39,15 @@ interface AppState {
     isSettingsOpen: boolean;
     /** Flag indicating if the frontend has successfully connected to the backend sidecar. */
     isBackendReady: boolean;
+
+    isBooting: boolean;
+    connectionError: string | null;
+
     /** Track active operations to conditionally skip health checks */
     activeOperations: Set<string>;
     activeTrendTaskId: string | null;
+
+    minDisplayTimeReached: boolean;
     
     // --- Actions ---
     /** Updates the search query string. */
@@ -60,12 +66,16 @@ interface AppState {
     closeSettings: () => void;
     /** Sets the connection status of the backend. */
     setBackendReady: (status: boolean) => void;
+    setConnectionError: (error: string | null) => void;
+    finishBooting: () => void;
     /** Register an active operation */
     addOperation: (id: string) => void;
     /** Remove a completed operation */
     removeOperation: (id: string) => void;
 
     setActiveTrendTaskId: (id: string | null) => void;
+
+    setMinDisplayTimeReached: (status: boolean) => void;
 }
 
 /**
@@ -90,8 +100,11 @@ export const useAppStore = create<AppState>((set) => ({
     currentView: 'search',
     isSettingsOpen: false,
     isBackendReady: false,
+    isBooting: true, // Mặc định là true khi vừa mở app
+    connectionError: null,
     activeOperations: new Set(),
     activeTrendTaskId: null, 
+    minDisplayTimeReached: false,
 
     setSearchQuery: (query) => set({ searchQuery: query }),
     
@@ -114,6 +127,8 @@ export const useAppStore = create<AppState>((set) => ({
     closeSettings: () => set({ isSettingsOpen: false }),
 
     setBackendReady: (status) => set({ isBackendReady: status }),
+    setConnectionError: (error) => set({ connectionError: error }),
+    finishBooting: () => set({ isBooting: false }),
     
     addOperation: (id) => set((state) => {
         const newOps = new Set(state.activeOperations);
@@ -128,6 +143,7 @@ export const useAppStore = create<AppState>((set) => ({
     }),
 
     setActiveTrendTaskId: (id) => set({ activeTrendTaskId: id }),
+    setMinDisplayTimeReached: (status) => set({ minDisplayTimeReached: status }),
 }));
 
 /**

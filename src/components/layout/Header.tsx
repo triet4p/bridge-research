@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Search, RefreshCw, Moon, Sun, Languages, Calendar as CalendarIcon, Filter, Check, Hash, BookOpen, Search as SearchIcon, Settings, Zap } from 'lucide-react';
 import { useAppStore } from '../../stores/useAppStore';
 import { ARXIV_CATEGORIES } from '../../constants/defaults';
+import logoImg from '../../assets/logo.png';
 
 /**
  * Props interface for the Header component.
@@ -131,7 +132,13 @@ export const Header: React.FC<HeaderProps> = ({ onRefresh, isRefreshing }) => {
                 <div className="flex flex-col md:flex-row gap-4 justify-between items-center mb-4">
                     {/* App branding - Bridge Research logo and name */}
                     <div className="flex items-center gap-2 select-none">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold shadow-lg">B</div>
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg">
+                            <img 
+                                src={logoImg} 
+                                alt="Logo" 
+                                className="w-5 h-5 object-contain" 
+                            />
+                        </div>
                         <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">Bridge Research</span>
                     </div>
 
