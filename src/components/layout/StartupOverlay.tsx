@@ -140,7 +140,7 @@ export const StartupOverlay: React.FC<Props> = ({ canEnter }) => {
                     </div>
                 )}
             </div>
-            <div className="absolute bottom-8 text-[10px] font-bold text-slate-400 uppercase tracking-widest">v0.2.0 • Phase 2 Stable</div>
+            <div className="absolute bottom-8 text-[10px] font-bold text-slate-400 uppercase tracking-widest">v0.3.0 • Stable Release</div>
         </div>
     );
 };
