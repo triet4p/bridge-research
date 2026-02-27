@@ -261,3 +261,33 @@ export interface TrendStatusResponse {
     /** Error message if status is 'failed'. */
     error?: string;
 }
+
+
+/**
+ * Payload từ Frontend gửi lên Backend để yêu cầu phân tích một Repo.
+ */
+export interface GithubAnalyzeRequest {
+    /** Đường dẫn URL của Github Repo (VD: https://github.com/owner/repo) */
+    url: string;
+    /** Nếu có, hệ thống sẽ tự động tạo liên kết giữa Repo này và Paper. */
+    paper_id?: string;
+}
+
+/**
+ * Dữ liệu trả về cho Frontend sau khi phân tích xong (hoặc khi fetch từ DB).
+ */
+export interface GithubRepoResponse {
+    repo_id: string;
+    url: string;
+    description?: string;
+    stars: number;
+    default_branch: string;
+    
+    tech_stack: string[];
+    complexity: string;
+    reusability: string;
+    hardware_req: string;
+    summary_markdown: string;
+    
+    analyzed_at: string;
+}

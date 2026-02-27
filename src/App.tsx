@@ -24,6 +24,7 @@ import { useLibraryFilter } from './hooks/useLibraryFilter';
 import { LMSettingsModal } from './components/settings/LMSettingsModal';
 import { ChatModal } from './components/chat/ChatModal';
 import { TrendDashboard } from './components/trends/TrendDashboard';
+import { CodeHubDashboard } from './components/github/CodeHubDashboard';
 import { StartupOverlay } from './components/layout/StartupOverlay';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -142,6 +143,8 @@ function App() {
           <main className="max-w-6xl mx-auto px-4 py-8 flex-1">
             {currentView === 'trends' ? (
               <TrendDashboard />
+            ) : currentView === 'repos' ? (
+              <CodeHubDashboard />
             ) : (
               <div className="space-y-6">
                 {isLoading && (

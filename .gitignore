@@ -45,3 +45,4 @@ python-sidecar/bridge-ai-backend.spec
 src-tauri/icons/
 
 docs/LLM.md
+docs/LLMs.md

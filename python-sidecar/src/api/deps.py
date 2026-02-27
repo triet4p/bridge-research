@@ -19,6 +19,7 @@ from src.repositories.lm_setting import LMSettingRepository
 from src.repositories.analysis import AnalysisRepository
 from src.repositories.chat import ChatRepository
 from src.repositories.trend import TrendRepository
+from src.repositories.github import GithubRepository
 from src.services.arxiv import ArxivService
 from src.services.local_paper import LocalPaperService
 from src.services.lm_setting import LMSettingService 
@@ -26,6 +27,7 @@ from src.services.summary import PaperSummaryService
 from src.services.paper_content import PaperContentService
 from src.services.paper_chat import PaperChatService
 from src.services.trend import TrendService
+from src.services.github import GithubService
 from src.core.state import ArxivAPIState, SystemState
 
 # 1. Base Session
@@ -57,11 +59,15 @@ def get_chat_repo(session: SessionDep) -> ChatRepository:
 def get_trend_repo(session: SessionDep) -> TrendRepository:
     return TrendRepository(session)
 
+def get_github_repo(session: SessionDep) -> GithubRepository:
+    return GithubRepository(session)
+
 LocalPaperRepoDep = Annotated[LocalPaperRepository, Depends(get_local_paper_repo)]
 LMSettingRepoDep = Annotated[LMSettingRepository, Depends(get_lm_setting_repo)]
 AnalysisRepoDep = Annotated[AnalysisRepository, Depends(get_analysis_repo)]
 ChatRepoDep = Annotated[ChatRepository, Depends(get_chat_repo)]
 TrendRepoDep = Annotated[TrendRepository, Depends(get_trend_repo)]
+GithubRepoDep = Annotated[GithubRepository, Depends(get_github_repo)]
 
 # 3. Services
 def get_arxiv_service(repo: LocalPaperRepoDep, arxiv_state: ArxivAPIStateDep) -> ArxivService:
@@ -98,6 +104,11 @@ def get_trend_service(
 ) -> TrendService:
     return TrendService(arxiv_service, lm_setting_service, trend_repo, system_state)
 
+def get_github_service(
+    github_repo: GithubRepoDep,
+) -> GithubService:
+    return GithubService(github_repo)
+
 # Type Aliases
 ArxivServiceDep = Annotated[ArxivService, Depends(get_arxiv_service)]
 LocalPaperServiceDep = Annotated[LocalPaperService, Depends(get_local_paper_service)]
@@ -106,3 +117,4 @@ ContentServiceDep = Annotated[PaperContentService, Depends(get_content_service)]
 SummaryServiceDep = Annotated[PaperSummaryService, Depends(get_summary_service)]
 ChatServiceDep = Annotated[PaperChatService, Depends(get_chat_service)]
 TrendServiceDep = Annotated[TrendService, Depends(get_trend_service)]
+GithubServiceDep = Annotated[GithubService, Depends(get_github_service)]

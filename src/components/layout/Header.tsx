@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, RefreshCw, Moon, Sun, Languages, Calendar as CalendarIcon, Filter, Check, Hash, BookOpen, Search as SearchIcon, Settings, Zap } from 'lucide-react';
+import { Search, RefreshCw, Moon, Sun, Languages, Calendar as CalendarIcon, Filter, Check, Hash, BookOpen, Search as SearchIcon, Settings, Zap, Github as GithubIcon } from 'lucide-react';
 import { useAppStore } from '../../stores/useAppStore';
 import { ARXIV_CATEGORIES } from '../../constants/defaults';
 import logoImg from '../../assets/logo.png';
@@ -124,6 +124,12 @@ export const Header: React.FC<HeaderProps> = ({ onRefresh, isRefreshing }) => {
                             className={`px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${currentView === 'trends' ? 'bg-white dark:bg-slate-800 text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
                         >
                             <Zap size={14} /> Trends
+                        </button>
+                        <button
+                            onClick={() => setView('repos')}
+                            className={`px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${currentView === 'repos' ? 'bg-white dark:bg-slate-800 text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+                        >
+                            <GithubIcon size={14} /> Code Hub
                         </button>
                     </div>
                 </div>
